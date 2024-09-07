@@ -102,7 +102,7 @@ print(f'Точность на тестовых данных: {accuracy * 100:.2f
 print(classification_report(y_test, y_pred_classes, target_names=label_encoder.classes_))
 
 # Сохранение модели
-model.save('hog_deep_model_advanced.h5')
+model.save('../models/hog_model.h5')
 print("HOG Deep модель сохранена.")
 
 # Оценка модели на валидационных данных

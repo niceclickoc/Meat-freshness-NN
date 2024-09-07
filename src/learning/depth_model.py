@@ -107,8 +107,15 @@ history_fine = model.fit(
 )
 
 # Сохранение модели после тонкой настройки
-model.save('depth_map_model_finetuned.h5')
+model.save('../models/depth_model.h5')
 print("Fine-tuned depth map model saved.")
+
+if os.path.exists('depth_map_model_initial.h5'):
+    os.remove('depth_map_model_initial.h5')
+    print('Модель init удалена')
+else:
+    print('Ошибка')
+    pass
 
 # Проверка точности на тестовых данных
 test_generator = val_datagen.flow_from_directory(

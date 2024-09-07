@@ -1,93 +1,115 @@
 import os
-import zipfile
-import tensorflow as tf
-import matplotlib
-import matplotlib.pyplot as plt
+import cv2
 import numpy as np
 import pandas as pd
 import random
 
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-# from keras.src.legacy.preprocessing.image import ImageDataGenerator
-# from keras import models
+from tensorflow.keras.models import load_model
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report
+from skimage.feature import hog
+from xgboost import XGBClassifier
 
-from src import config
+# Пути к моделям
+chromatic_model_path = './models/chromatic_model.h5'
+hog_model_path = './models/hog_model.h5'
+depth_map_model_path = './models/depth_model.h5'
 
-matplotlib.use('Agg')  # Используйте back-end 'Agg' для совместимости
+# Загрузка моделей
+chromatic_model = load_model(chromatic_model_path)
+hog_model = load_model(hog_model_path)
+depth_map_model = load_model(depth_map_model_path)
 
-# Пути к данным и модели
-dataset_path = '../meat-freshness-image-dataset.zip'
-extract_path = '../meat_freshness_dataset'
-val_dir = os.path.join(extract_path, 'Meat Freshness.v1-new-dataset.multiclass', 'valid')
+# Пути к тестовым данным
+test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
 
-# Распаковка архива (если необходимо)
-if not os.path.exists(extract_path):
-    with zipfile.ZipFile(dataset_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_path)
-    print("Архив успешно распакован.")
+# Функция для загрузки данных и получения предсказаний от модели
+def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_size=(224, 224)):
+    data = []
+    labels = []
+    file_paths = []
+    class_names = os.listdir(data_dir)
+    all_images = []
 
-# Создание генератора данных для тестирования
-val_datagen = ImageDataGenerator(rescale=1. / 255)
+    # Собираем все изображения из всех классов
+    for class_name in class_names:
+        class_dir = os.path.join(data_dir, class_name)
+        if os.path.isdir(class_dir):
+            for img_name in os.listdir(class_dir):
+                img_path = os.path.join(class_dir, img_name)
+                all_images.append((img_path, class_name))
 
-test_generator = val_datagen.flow_from_directory(
-    val_dir,
-    target_size=(256, 256),
-    batch_size=32,
-    class_mode='categorical',
-    shuffle=False
-)
+    # Выбираем случайные изображения
+    random_samples = random.sample(all_images, num_samples)
 
-# Загрузка модели
-model = tf.keras.models.load_model('./models/meat_freshness_model.h5')
+    for img_path, class_name in random_samples:
+        try:
+            image = cv2.imread(img_path)
+            image = cv2.resize(image, target_size)
+            image = preprocess_func(image)
+            data.append(image)
+            labels.append(class_name)
+            file_paths.append(img_path)
+        except Exception as e:
+            print(f"Ошибка при обработке файла {img_path}: {e}")
 
-# Проверка точности на тестовых данных
-test_loss, test_acc = model.evaluate(test_generator)
-print(f'Точность на тестовых данных: {test_acc * 100:.2f}%')
+    data = np.array(data)
+    predictions = model.predict(data)
+    return predictions, labels, file_paths
 
+# Функции предобработки для каждой модели
+def preprocess_chromatic(image):
+    return image / 255.0
 
-# Функция для отображения предсказаний
-def plot_predictions(images, labels, preds):
-    plt.figure(figsize=(15, 10))
-    num_images = min(len(images), 16)  # Ограничим количество изображений до 16
-    for i in range(num_images):
-        plt.subplot(4, 4, i + 1)
-        plt.imshow(images[i])
-        plt.title(f'Факт: {labels[i]}\nПредсказание: {preds[i]}')
-        plt.axis('off')
-    plt.tight_layout()
-    plt.savefig('./test/predictions.png')  # Сохраните изображение в файл
+def preprocess_hog(image):
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    resized_img = cv2.resize(image, (128, 128))
+    features = hog(resized_img, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=False)
+    return features
 
+def preprocess_depth_map(image):
+    return image / 255.0
 
-# Получение всех изображений из тестового генератора
-all_images, all_labels, all_preds = [], [], []
-class_indices = {v: k for k, v in test_generator.class_indices.items()}
+# Получение предсказаний от каждой модели
+chromatic_preds, labels, file_paths = load_and_predict(chromatic_model, preprocess_chromatic, test_dir, target_size=(256, 256))
+hog_preds, _, _ = load_and_predict(hog_model, preprocess_hog, test_dir, target_size=(128, 128))
+depth_map_preds, _, _ = load_and_predict(depth_map_model, preprocess_depth_map, test_dir, target_size=(256, 256))
 
-for i in range(len(test_generator)):
-    x, y = test_generator[i]
-    pred = model.predict(x)
-    for j in range(len(x)):
-        all_images.append(x[j])
-        all_labels.append(class_indices[np.argmax(y[j])])
-        all_preds.append(class_indices[np.argmax(pred[j])])
+# Преобразование предсказаний в метки классов
+chromatic_preds_classes = np.argmax(chromatic_preds, axis=1)
+hog_preds_classes = np.argmax(hog_preds, axis=1)
+depth_map_preds_classes = np.argmax(depth_map_preds, axis=1)
 
-# Случайным образом выбираем подмножество изображений для отображения
-indices = random.sample(range(len(all_images)), 16)
-images = [all_images[i] for i in indices]
-labels = [all_labels[i] for i in indices]
-preds = [all_preds[i] for i in indices]
+# Кодирование меток
+label_encoder = LabelEncoder()
+labels_encoded = label_encoder.fit_transform(labels)
 
-# Отображение предсказаний
-plot_predictions(images, labels, preds)
+# Преобразование предсказаний в формат для мета-классификатора
+X_meta = np.stack([chromatic_preds_classes, hog_preds_classes, depth_map_preds_classes], axis=1)
 
-# Создание DataFrame для результатов
-results = pd.DataFrame({
-    'Файл': [test_generator.filenames[i] for i in indices],
-    'Фактический': labels,
-    'Предсказанный': preds
+# Обучение мета-классификатора с использованием градиентного бустинга
+meta_clf = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+meta_clf.fit(X_meta, labels_encoded)
+
+# Ансамблевое предсказание мета-классификатором
+final_preds = meta_clf.predict(X_meta)
+
+# Оценка точности ансамблевой модели
+accuracy = accuracy_score(labels_encoded, final_preds)
+print(f'Точность на тестовых данных: {accuracy * 100:.2f}%')
+print(classification_report(labels_encoded, final_preds, target_names=label_encoder.classes_))
+
+# Укороченные пути для удобства отображения
+short_file_paths = [os.path.basename(path) for path in file_paths]
+
+# Вывод результатов в таблице
+results_df = pd.DataFrame({
+    'Файл': short_file_paths,
+    'Метка': label_encoder.inverse_transform(labels_encoded),
+    'Chromatic': label_encoder.inverse_transform(chromatic_preds_classes),
+    'HOG': label_encoder.inverse_transform(hog_preds_classes),
+    'Depth Map': label_encoder.inverse_transform(depth_map_preds_classes),
+    'Итоговый вердикт': label_encoder.inverse_transform(final_preds)
 })
 
-# Сохранение результатов в CSV файл
-results.to_csv('./test/prediction_results.csv', index=False)
-
-# Отображение первых 20 результатов
-print(results.head(20))
+print(results_df.to_string(index=False))

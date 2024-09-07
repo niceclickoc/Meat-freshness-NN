@@ -41,8 +41,8 @@ else:
     print(f"Директория {val_dir} существует.")
 
 # Создание генераторов данных
-train_datagen = ImageDataGenerator(rescale=1. / 255, horizontal_flip=True, rotation_range=30, zoom_range=0.2)
-val_datagen = ImageDataGenerator(rescale=1. / 255)
+train_datagen = ImageDataGenerator(rescale=1./255, horizontal_flip=True, rotation_range=30, zoom_range=0.2)
+val_datagen = ImageDataGenerator(rescale=1./255)
 
 train_generator = train_datagen.flow_from_directory(
     train_dir,
@@ -84,7 +84,7 @@ early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5
 history = model.fit(
     train_generator,
     validation_data=validation_generator,
-    epochs=1,
+    epochs=20,
     callbacks=[early_stopping]
 )
 
@@ -102,13 +102,20 @@ model.compile(optimizer=tf.keras.optimizers.Adam(1e-5), loss='categorical_crosse
 history_fine = model.fit(
     train_generator,
     validation_data=validation_generator,
-    epochs=1,
+    epochs=30,
     callbacks=[early_stopping]
 )
 
 # Сохранение модели после тонкой настройки
-model.save('chromatic_analysis_model_finetuned.h5')
+model.save('../models/chromatic_model.h5')
 print("Fine-tuned chromatic analysis model saved.")
+
+if os.path.exists('chromatic_analysis_model_initial.h5'):
+    os.remove('chromatic_analysis_model_initial.h5')
+    print('Модель init удалена')
+else:
+    print('Ошибка')
+    pass
 
 # Проверка точности на тестовых данных
 test_generator = val_datagen.flow_from_directory(
