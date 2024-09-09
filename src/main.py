@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score, classification_report
 from skimage.feature import hog
 from xgboost import XGBClassifier
 
-from utils.consensus_committee import ConsensusCommittee
+from src.utils.consensus_committee import ConsensusCommittee
 
 # Пути к моделям
 chromatic_model_path = './models/chromatic_model.h5'
