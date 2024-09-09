@@ -10,6 +10,8 @@ from sklearn.metrics import accuracy_score, classification_report
 from skimage.feature import hog
 from xgboost import XGBClassifier
 
+from utils.consensus_committee import ConsensusCommittee
+
 # Пути к моделям
 chromatic_model_path = './models/chromatic_model.h5'
 hog_model_path = './models/hog_model.h5'
@@ -70,6 +72,13 @@ def preprocess_hog(image):
 def preprocess_depth_map(image):
     return image / 255.0
 
+
+# Инициализация комитета с весами агентов и коэффициентами значимости
+committee = ConsensusCommittee(
+    weights=[0.4, 0.3, 0.3],  # Веса для моделей хроматического анализа, HOG и карт глубины
+    agent_coeffs=[1.0, 1.0, 1.0]  # Коэффициенты значимости для каждого агента
+)
+
 # Получение предсказаний от каждой модели
 chromatic_preds, labels, file_paths = load_and_predict(chromatic_model, preprocess_chromatic, test_dir, target_size=(256, 256))
 hog_preds, _, _ = load_and_predict(hog_model, preprocess_hog, test_dir, target_size=(128, 128))
@@ -83,6 +92,24 @@ depth_map_preds_classes = np.argmax(depth_map_preds, axis=1)
 # Кодирование меток
 label_encoder = LabelEncoder()
 labels_encoded = label_encoder.fit_transform(labels)
+
+# # Проверка вероятностей для каждой модели
+# for i in range(len(labels)):
+#     print(f"Файл: {file_paths[i]}")
+#     print(f"Chromatic Model Prediction: {chromatic_preds[i]}")
+#     print(f"HOG Model Prediction: {hog_preds[i]}")
+#     print(f"Depth Map Model Prediction: {depth_map_preds[i]}")
+#     print("="*50)
+
+# Агент консенсуса: использование для принятия решений
+for i in range(len(labels)):
+    result, final_prob = committee.evaluate(
+        chromatic_preds[i],
+        hog_preds[i],
+        depth_map_preds[i],
+        pred_prob=None  # Можно добавить предсказание от Ppred, если оно имеется
+    )
+    print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
 
 # Преобразование предсказаний в формат для мета-классификатора
 X_meta = np.stack([chromatic_preds_classes, hog_preds_classes, depth_map_preds_classes], axis=1)
