@@ -1,9 +1,8 @@
 import numpy as np
 
-
 class ConsensusCommittee:
     def __init__(self, weights, agent_coeffs, threshold_auto_confirm=0.95, threshold_consensus_lower=0.5,
-                 threshold_consensus_upper=0.8, threshold_pred_model=0.85, threshold_final=0.9):
+                 threshold_consensus_upper=0.8, threshold_pred_model=0.85, threshold_final=0.9, discrepancy_threshold=0.2):
         """
         Initialize the committee with weights and agent coefficients.
 
@@ -14,6 +13,7 @@ class ConsensusCommittee:
         :param threshold_consensus_upper: upper bound threshold for consensus process
         :param threshold_pred_model: threshold for probabilistic prediction model
         :param threshold_final: final threshold for expert involvement
+        :param discrepancy_threshold: threshold for agent result discrepancies
         """
         self.weights = weights
         self.agent_coeffs = agent_coeffs
@@ -22,6 +22,7 @@ class ConsensusCommittee:
         self.threshold_consensus_upper = threshold_consensus_upper
         self.threshold_pred_model = threshold_pred_model
         self.threshold_final = threshold_final
+        self.discrepancy_threshold = discrepancy_threshold
 
     def sigmoid(self, x):
         """Sigmoid function for probability scaling."""
@@ -70,7 +71,11 @@ class ConsensusCommittee:
         elif self.threshold_consensus_lower <= result <= self.threshold_consensus_upper:
             return "Start Consensus Process", result
 
-        # Step 4: Check if probabilistic prediction model should be used
+        # Step 4: Check if there are significant discrepancies between agent predictions
+        if self.check_discrepancies(chromatic_prob, hog_prob, depth_prob):
+            return "Human Expert Needed due to discrepancies", result
+
+        # Step 5: Check if probabilistic prediction model should be used
         elif result <= self.threshold_pred_model:
             if pred_prob is not None:
                 # Apply formula for probabilistic prediction model integration:
@@ -80,7 +85,20 @@ class ConsensusCommittee:
                 else:
                     return "Defect Confirmed with Prediction", final_result
             else:
-                return "Probabilistic Prediction Model Needed", result
+                return "Human Expert Needed", result
 
-        # Step 5: No defect detected
+        # Step 6: No defect detected
         return "No Defect", result
+
+    def check_discrepancies(self, chromatic_prob, hog_prob, depth_prob):
+        """
+        Check if the discrepancies between agents' predictions are greater than the defined threshold.
+
+        :param chromatic_prob: probability from chromatic model
+        :param hog_prob: probability from HOG model
+        :param depth_prob: probability from depth model
+        :return: True if discrepancies are large, False otherwise
+        """
+        max_prob = max(chromatic_prob, hog_prob, depth_prob)
+        min_prob = min(chromatic_prob, hog_prob, depth_prob)
+        return (max_prob - min_prob) > self.discrepancy_threshold

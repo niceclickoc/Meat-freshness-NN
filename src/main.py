@@ -5,12 +5,13 @@ import pandas as pd
 import random
 
 from tensorflow.keras.models import load_model
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report
 from skimage.feature import hog
 from xgboost import XGBClassifier
 
 from src.utils.consensus_committee import ConsensusCommittee
+
 
 # Пути к моделям
 chromatic_model_path = './models/chromatic_model.h5'
@@ -24,7 +25,8 @@ depth_map_model = load_model(depth_map_model_path)
 
 # Пути к тестовым данным
 test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
-test_distorted_image = './test/distorted_test.jpg'
+test_distorted_image = './test/distorted_test.jpg' # ДЛЯ ТЕСТА
+
 
 # Функция для загрузки данных и получения предсказаний от модели
 def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_size=(224, 224)):
@@ -45,8 +47,8 @@ def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_s
     # Выбираем случайные изображения
     random_samples = random.sample(all_images, num_samples)
 
-    # подстава ебаная
-    random_samples.append((test_distorted_image, 'Fresh'))
+    # Тестовое изображение (ДЛЯ ТЕСТА)
+    random_samples.append((test_distorted_image, 'Spoiled'))
 
     for img_path, class_name in random_samples:
         try:
@@ -63,11 +65,24 @@ def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_s
     predictions = model.predict(data)
     return predictions, labels, file_paths
 
+# Добавление случайного шума к изображению distorted_test.jpg ЕСЛИ НЕОБХОДИМО
+# def add_noise_to_image(image):
+#     if image.dtype != np.uint8:
+#         image = image.astype(np.uint8)
+#
+#     noise = np.random.normal(loc=0, scale=10, size=image.shape).astype(np.uint8)
+#     noisy_image = cv2.add(image, noise)
+#     return noisy_image
+
+
 # Функции предобработки для каждой модели
 def preprocess_chromatic(image):
     return image / 255.0
 
 def preprocess_hog(image):
+    if image.dtype != np.uint8:
+        image = image.astype(np.uint8)
+
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     resized_img = cv2.resize(image, (128, 128))
     features = hog(resized_img, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=False)
@@ -76,42 +91,44 @@ def preprocess_hog(image):
 def preprocess_depth_map(image):
     return image / 255.0
 
-# Функция для динамического взвешивания предсказаний
-def dynamic_weight(prob):
-    if prob > 0.9 or prob < 0.1:
-        return 1.2  # Увеличиваем вес для высокой уверенности
+
+# Функция для динамического взвешивания на основе расхождения агентов
+def dynamic_weight_adjustment(chromatic_pred, hog_pred, depth_map_pred):
+    disagreement = max(chromatic_pred, hog_pred, depth_map_pred) - min(chromatic_pred, hog_pred, depth_map_pred)
+    if disagreement > 0.2:
+        return 1.5  # Увеличиваем вес при значительном расхождении
     else:
-        return 0.8  # Уменьшаем вес для низкой уверенности
+        return 1.0  # Стандартный вес
 
-# Нормализация предсказаний моделей
-def normalize_predictions(preds):
-    scaler = MinMaxScaler()
-    preds_reshaped = preds.reshape(1, -1)
-    return scaler.fit_transform(preds_reshaped).flatten()
 
-# Функция для объединения результатов моделей с динамическими весами
-def calculate_final_prediction(chromatic_preds, hog_preds, depth_map_preds):
-    chromatic_preds_normalized = normalize_predictions(chromatic_preds)
-    hog_preds_normalized = normalize_predictions(hog_preds)
-    depth_map_preds_normalized = normalize_predictions(depth_map_preds)
+# Рассчет финальных предсказаний с учётом расхождения
+def calculate_final_prediction_with_disagreement(chromatic_preds, hog_preds, depth_map_preds):
+    chromatic_preds_normalized = chromatic_preds.flatten()
+    hog_preds_normalized = hog_preds.flatten()
+    depth_map_preds_normalized = depth_map_preds.flatten()
 
-    # Вычисляем веса для каждой модели
-    weights_chromatic = [dynamic_weight(p) for p in chromatic_preds_normalized]
-    weights_hog = [dynamic_weight(p) for p in hog_preds_normalized]
-    weights_depth = [dynamic_weight(p) for p in depth_map_preds_normalized]
+    weights_chromatic = [dynamic_weight_adjustment(c, h, d) for c, h, d in zip(chromatic_preds_normalized, hog_preds_normalized, depth_map_preds_normalized)]
+    weights_hog = [dynamic_weight_adjustment(h, c, d) for c, h, d in zip(chromatic_preds_normalized, hog_preds_normalized, depth_map_preds_normalized)]
+    weights_depth = [dynamic_weight_adjustment(d, c, h) for c, h, d in zip(chromatic_preds_normalized, hog_preds_normalized, depth_map_preds_normalized)]
 
-    # Комбинирование предсказаний моделей с учетом весов
-    final_preds = (np.array(weights_chromatic) * np.array(chromatic_preds_normalized) +
-                   np.array(weights_hog) * np.array(hog_preds_normalized) +
-                   np.array(weights_depth) * np.array(depth_map_preds_normalized)) / 3
+    final_preds = (np.array(weights_chromatic) * chromatic_preds_normalized +
+                   np.array(weights_hog) * hog_preds_normalized +
+                   np.array(weights_depth) * depth_map_preds_normalized) / 3
 
     return final_preds
+
 
 # Инициализация комитета с весами агентов и коэффициентами значимости
 committee = ConsensusCommittee(
     weights=[0.4, 0.3, 0.3],  # Веса для моделей хроматического анализа, HOG и карт глубины
     agent_coeffs=[1.0, 1.0, 1.0]  # Коэффициенты значимости для каждого агента
 )
+
+
+# Загрузка изображения с шумом УБРАТЬ ПОСЛЕ ТЕСТОВ
+# test_distorted_image_with_noise = cv2.imread(test_distorted_image)
+# test_distorted_image_with_noise = add_noise_to_image(test_distorted_image_with_noise)
+
 
 # Получение предсказаний от каждой модели
 chromatic_preds, labels, file_paths = load_and_predict(chromatic_model, preprocess_chromatic, test_dir, target_size=(256, 256))
@@ -127,7 +144,8 @@ depth_map_preds_classes = np.argmax(depth_map_preds, axis=1)
 label_encoder = LabelEncoder()
 labels_encoded = label_encoder.fit_transform(labels)
 
-# Проверка вероятностей для каждой модели
+
+# Проверка вероятностей для каждой модели (ДЛЯ ТЕСТОВ)
 # for i in range(len(labels)):
 #     print(f"Файл: {file_paths[i]}")
 #     print(f"Chromatic Model Prediction: {chromatic_preds[i]}")
@@ -135,29 +153,29 @@ labels_encoded = label_encoder.fit_transform(labels)
 #     print(f"Depth Map Model Prediction: {depth_map_preds[i]}")
 #     print("="*50)
 
+
 # Агент консенсуса: использование для принятия решений
 for i in range(len(labels)):
-    # Интеграция предсказаний с динамическими весами
-    final_preds = calculate_final_prediction(
+    # print(f"Хроматическое предсказание: {chromatic_preds[i]}, HOG предсказание: {hog_preds[i]}, Depth Map предсказание: {depth_map_preds[i]}")
+    final_preds = calculate_final_prediction_with_disagreement(
         chromatic_preds[i].reshape(1, -1),
         hog_preds[i].reshape(1, -1),
         depth_map_preds[i].reshape(1, -1)
     )
+    # print(f"Файл: {file_paths[i]}, Предсказания: {final_preds}")
 
-    print(f"Файл: {file_paths[i]}, Предсказания: {final_preds}")
-
-    # Оценка с помощью комитета
-    if np.all((final_preds >= 0.5) & (final_preds <= 0.8)):
+    if np.all((final_preds >= 0.5) & (final_preds <= 0.8)) or np.std(final_preds) > 0.2:
         result, final_prob = committee.evaluate(
             chromatic_preds[i],
             hog_preds[i],
             depth_map_preds[i],
-            pred_prob=None  # Можно добавить предсказание от Ppred, если оно имеется
+            pred_prob=None  # Сюда Ppred, когда будет
         )
         print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
     else:
-        print(f"Файл: {file_paths[i]} - результат ясен, комитет не нужен.")
-        # pass
+        # print(f"Файл: {file_paths[i]} - результат ясен, комитет не нужен.")
+        pass
+
 
 # Преобразование предсказаний в формат для мета-классификатора
 X_meta = np.stack([chromatic_preds_classes, hog_preds_classes, depth_map_preds_classes], axis=1)
@@ -173,6 +191,7 @@ final_preds = meta_clf.predict(X_meta)
 accuracy = accuracy_score(labels_encoded, final_preds)
 print(f'Точность на тестовых данных: {accuracy * 100:.2f}%')
 print(classification_report(labels_encoded, final_preds, target_names=label_encoder.classes_))
+
 
 # Укороченные пути для удобства отображения
 short_file_paths = [os.path.basename(path) for path in file_paths]
