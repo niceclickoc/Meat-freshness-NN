@@ -5,7 +5,7 @@ import pandas as pd
 import random
 
 from tensorflow.keras.models import load_model
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from sklearn.metrics import accuracy_score, classification_report
 from skimage.feature import hog
 from xgboost import XGBClassifier
@@ -24,6 +24,7 @@ depth_map_model = load_model(depth_map_model_path)
 
 # Пути к тестовым данным
 test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
+test_distorted_image = './test/distorted_test.jpg'
 
 # Функция для загрузки данных и получения предсказаний от модели
 def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_size=(224, 224)):
@@ -43,6 +44,9 @@ def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_s
 
     # Выбираем случайные изображения
     random_samples = random.sample(all_images, num_samples)
+
+    # подстава ебаная
+    random_samples.append((test_distorted_image, 'Fresh'))
 
     for img_path, class_name in random_samples:
         try:
@@ -72,6 +76,36 @@ def preprocess_hog(image):
 def preprocess_depth_map(image):
     return image / 255.0
 
+# Функция для динамического взвешивания предсказаний
+def dynamic_weight(prob):
+    if prob > 0.9 or prob < 0.1:
+        return 1.2  # Увеличиваем вес для высокой уверенности
+    else:
+        return 0.8  # Уменьшаем вес для низкой уверенности
+
+# Нормализация предсказаний моделей
+def normalize_predictions(preds):
+    scaler = MinMaxScaler()
+    preds_reshaped = preds.reshape(1, -1)
+    return scaler.fit_transform(preds_reshaped).flatten()
+
+# Функция для объединения результатов моделей с динамическими весами
+def calculate_final_prediction(chromatic_preds, hog_preds, depth_map_preds):
+    chromatic_preds_normalized = normalize_predictions(chromatic_preds)
+    hog_preds_normalized = normalize_predictions(hog_preds)
+    depth_map_preds_normalized = normalize_predictions(depth_map_preds)
+
+    # Вычисляем веса для каждой модели
+    weights_chromatic = [dynamic_weight(p) for p in chromatic_preds_normalized]
+    weights_hog = [dynamic_weight(p) for p in hog_preds_normalized]
+    weights_depth = [dynamic_weight(p) for p in depth_map_preds_normalized]
+
+    # Комбинирование предсказаний моделей с учетом весов
+    final_preds = (np.array(weights_chromatic) * np.array(chromatic_preds_normalized) +
+                   np.array(weights_hog) * np.array(hog_preds_normalized) +
+                   np.array(weights_depth) * np.array(depth_map_preds_normalized)) / 3
+
+    return final_preds
 
 # Инициализация комитета с весами агентов и коэффициентами значимости
 committee = ConsensusCommittee(
@@ -93,7 +127,7 @@ depth_map_preds_classes = np.argmax(depth_map_preds, axis=1)
 label_encoder = LabelEncoder()
 labels_encoded = label_encoder.fit_transform(labels)
 
-# # Проверка вероятностей для каждой модели
+# Проверка вероятностей для каждой модели
 # for i in range(len(labels)):
 #     print(f"Файл: {file_paths[i]}")
 #     print(f"Chromatic Model Prediction: {chromatic_preds[i]}")
@@ -103,13 +137,27 @@ labels_encoded = label_encoder.fit_transform(labels)
 
 # Агент консенсуса: использование для принятия решений
 for i in range(len(labels)):
-    result, final_prob = committee.evaluate(
-        chromatic_preds[i],
-        hog_preds[i],
-        depth_map_preds[i],
-        pred_prob=None  # Можно добавить предсказание от Ppred, если оно имеется
+    # Интеграция предсказаний с динамическими весами
+    final_preds = calculate_final_prediction(
+        chromatic_preds[i].reshape(1, -1),
+        hog_preds[i].reshape(1, -1),
+        depth_map_preds[i].reshape(1, -1)
     )
-    print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
+
+    print(f"Файл: {file_paths[i]}, Предсказания: {final_preds}")
+
+    # Оценка с помощью комитета
+    if np.all((final_preds >= 0.5) & (final_preds <= 0.8)):
+        result, final_prob = committee.evaluate(
+            chromatic_preds[i],
+            hog_preds[i],
+            depth_map_preds[i],
+            pred_prob=None  # Можно добавить предсказание от Ppred, если оно имеется
+        )
+        print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
+    else:
+        print(f"Файл: {file_paths[i]} - результат ясен, комитет не нужен.")
+        # pass
 
 # Преобразование предсказаний в формат для мета-классификатора
 X_meta = np.stack([chromatic_preds_classes, hog_preds_classes, depth_map_preds_classes], axis=1)
