@@ -48,7 +48,7 @@ def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_s
     random_samples = random.sample(all_images, num_samples)
 
     # Тестовое изображение (ДЛЯ ТЕСТА)
-    random_samples.append((test_distorted_image, 'Fresh'))
+    random_samples.append((test_distorted_image, 'Spoiled'))
 
     for img_path, class_name in random_samples:
         try:
@@ -64,15 +64,6 @@ def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_s
     data = np.array(data)
     predictions = model.predict(data)
     return predictions, labels, file_paths
-
-# Добавление случайного шума к изображению distorted_test.jpg ЕСЛИ НЕОБХОДИМО
-# def add_noise_to_image(image):
-#     if image.dtype != np.uint8:
-#         image = image.astype(np.uint8)
-#
-#     noise = np.random.normal(loc=0, scale=10, size=image.shape).astype(np.uint8)
-#     noisy_image = cv2.add(image, noise)
-#     return noisy_image
 
 
 # Функции предобработки для каждой модели
@@ -92,11 +83,6 @@ def preprocess_depth_map(image):
     return image / 255.0
 
 
-# Загрузка изображения с шумом УБРАТЬ ПОСЛЕ ТЕСТОВ
-# test_distorted_image_with_noise = cv2.imread(test_distorted_image)
-# test_distorted_image_with_noise = add_noise_to_image(test_distorted_image_with_noise)
-
-
 # Получение предсказаний от каждой модели
 chromatic_preds, labels, file_paths = load_and_predict(chromatic_model, preprocess_chromatic, test_dir, target_size=(256, 256))
 hog_preds, _, _ = load_and_predict(hog_model, preprocess_hog, test_dir, target_size=(128, 128))
@@ -110,15 +96,6 @@ depth_map_preds_classes = np.argmax(depth_map_preds, axis=1)
 # Кодирование меток
 label_encoder = LabelEncoder()
 labels_encoded = label_encoder.fit_transform(labels)
-
-
-# Проверка вероятностей для каждой модели (ДЛЯ ТЕСТОВ)
-# for i in range(len(labels)):
-#     print(f"Файл: {file_paths[i]}")
-#     print(f"Chromatic Model Prediction: {chromatic_preds[i]}")
-#     print(f"HOG Model Prediction: {hog_preds[i]}")
-#     print(f"Depth Map Model Prediction: {depth_map_preds[i]}")
-#     print("="*50)
 
 
 # Инициализация комитета с весами агентов и коэффициентами значимости
@@ -144,12 +121,14 @@ for i in range(len(labels)):
     depth_map_sum = depth_map_half_fresh_prob + depth_map_spoiled_prob
 
     result, final_prob = committee.evaluate(
-        chromatic_sum,
-        hog_sum,
-        depth_map_sum,
+        chromatic_sum.reshape(1, -1),
+        hog_sum.reshape(1, -1),
+        depth_map_sum.reshape(1, -1),
         pred_prob=None  # Сюда Ppred, когда будет
     )
-    print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
+
+    if result != "No Defect":
+        print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
 
 
 # Преобразование предсказаний в формат для мета-классификатора
