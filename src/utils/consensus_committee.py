@@ -1,7 +1,7 @@
 import numpy as np
 
 class ConsensusCommittee:
-    def __init__(self, weights, agent_coeffs, threshold_auto_confirm=0.95, threshold_consensus_lower=0.5,
+    def __init__(self, weights, agent_coeffs, threshold_auto_confirm=0.95, threshold_consensus_lower=0.6,
                  threshold_consensus_upper=0.8, threshold_pred_model=0.85, threshold_final=0.9, discrepancy_threshold=0.2):
         """
         Initialize the committee with weights and agent coefficients.

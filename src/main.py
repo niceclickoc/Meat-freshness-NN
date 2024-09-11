@@ -48,7 +48,7 @@ def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_s
     random_samples = random.sample(all_images, num_samples)
 
     # Тестовое изображение (ДЛЯ ТЕСТА)
-    random_samples.append((test_distorted_image, 'Spoiled'))
+    random_samples.append((test_distorted_image, 'Fresh'))
 
     for img_path, class_name in random_samples:
         try:
@@ -92,39 +92,6 @@ def preprocess_depth_map(image):
     return image / 255.0
 
 
-# Функция для динамического взвешивания на основе расхождения агентов
-def dynamic_weight_adjustment(chromatic_pred, hog_pred, depth_map_pred):
-    disagreement = max(chromatic_pred, hog_pred, depth_map_pred) - min(chromatic_pred, hog_pred, depth_map_pred)
-    if disagreement > 0.2:
-        return 1.5  # Увеличиваем вес при значительном расхождении
-    else:
-        return 1.0  # Стандартный вес
-
-
-# Рассчет финальных предсказаний с учётом расхождения
-def calculate_final_prediction_with_disagreement(chromatic_preds, hog_preds, depth_map_preds):
-    chromatic_preds_normalized = chromatic_preds.flatten()
-    hog_preds_normalized = hog_preds.flatten()
-    depth_map_preds_normalized = depth_map_preds.flatten()
-
-    weights_chromatic = [dynamic_weight_adjustment(c, h, d) for c, h, d in zip(chromatic_preds_normalized, hog_preds_normalized, depth_map_preds_normalized)]
-    weights_hog = [dynamic_weight_adjustment(h, c, d) for c, h, d in zip(chromatic_preds_normalized, hog_preds_normalized, depth_map_preds_normalized)]
-    weights_depth = [dynamic_weight_adjustment(d, c, h) for c, h, d in zip(chromatic_preds_normalized, hog_preds_normalized, depth_map_preds_normalized)]
-
-    final_preds = (np.array(weights_chromatic) * chromatic_preds_normalized +
-                   np.array(weights_hog) * hog_preds_normalized +
-                   np.array(weights_depth) * depth_map_preds_normalized) / 3
-
-    return final_preds
-
-
-# Инициализация комитета с весами агентов и коэффициентами значимости
-committee = ConsensusCommittee(
-    weights=[0.4, 0.3, 0.3],  # Веса для моделей хроматического анализа, HOG и карт глубины
-    agent_coeffs=[1.0, 1.0, 1.0]  # Коэффициенты значимости для каждого агента
-)
-
-
 # Загрузка изображения с шумом УБРАТЬ ПОСЛЕ ТЕСТОВ
 # test_distorted_image_with_noise = cv2.imread(test_distorted_image)
 # test_distorted_image_with_noise = add_noise_to_image(test_distorted_image_with_noise)
@@ -154,27 +121,35 @@ labels_encoded = label_encoder.fit_transform(labels)
 #     print("="*50)
 
 
+# Инициализация комитета с весами агентов и коэффициентами значимости
+committee = ConsensusCommittee(
+    weights=[0.4, 0.3, 0.3],  # Веса для моделей хроматического анализа, HOG и карт глубины
+    agent_coeffs=[1.0, 1.0, 1.0]  # Коэффициенты значимости для каждого агента
+)
+
 # Агент консенсуса: использование для принятия решений
 for i in range(len(labels)):
     # print(f"Хроматическое предсказание: {chromatic_preds[i]}, HOG предсказание: {hog_preds[i]}, Depth Map предсказание: {depth_map_preds[i]}")
-    final_preds = calculate_final_prediction_with_disagreement(
-        chromatic_preds[i].reshape(1, -1),
-        hog_preds[i].reshape(1, -1),
-        depth_map_preds[i].reshape(1, -1)
-    )
-    # print(f"Файл: {file_paths[i]}, Предсказания: {final_preds}")
+    chromatic_half_fresh_prob = chromatic_preds[i][1]  # Вероятность для Half-Fresh
+    chromatic_spoiled_prob = chromatic_preds[i][2]  # Вероятность для Spoiled
 
-    if np.all((final_preds >= 0.5) & (final_preds <= 0.8)) or np.std(final_preds) > 0.2:
-        result, final_prob = committee.evaluate(
-            chromatic_preds[i],
-            hog_preds[i],
-            depth_map_preds[i],
-            pred_prob=None  # Сюда Ppred, когда будет
-        )
-        print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
-    else:
-        # print(f"Файл: {file_paths[i]} - результат ясен, комитет не нужен.")
-        pass
+    hog_half_fresh_prob = hog_preds[i][1]  # Вероятность для Half-Fresh
+    hog_spoiled_prob = hog_preds[i][2]  # Вероятность для Spoiled
+
+    depth_map_half_fresh_prob = depth_map_preds[i][1]  # Вероятность для Half-Fresh
+    depth_map_spoiled_prob = depth_map_preds[i][2]  # Вероятность для Spoiled
+
+    chromatic_sum = chromatic_half_fresh_prob + chromatic_spoiled_prob
+    hog_sum = hog_half_fresh_prob + hog_spoiled_prob
+    depth_map_sum = depth_map_half_fresh_prob + depth_map_spoiled_prob
+
+    result, final_prob = committee.evaluate(
+        chromatic_sum,
+        hog_sum,
+        depth_map_sum,
+        pred_prob=None  # Сюда Ppred, когда будет
+    )
+    print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
 
 
 # Преобразование предсказаний в формат для мета-классификатора
