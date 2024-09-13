@@ -11,7 +11,7 @@ from skimage.feature import hog
 from xgboost import XGBClassifier
 
 from src.utils.consensus_committee import ConsensusCommittee
-
+from src.utils.expert_interface import expert_interface
 
 # Пути к моделям
 chromatic_model_path = './models/chromatic_model.h5'
@@ -107,6 +107,14 @@ meta_clf.fit(X_meta, labels_encoded)
 # Ансамблевое предсказание мета-классификатором
 final_preds = meta_clf.predict(X_meta)
 
+# Укороченные пути для удобства отображения
+short_file_paths = [os.path.basename(path) for path in file_paths]
+
+
+# Колбэк для обновления предсказаний от эксперта
+def update_prediction(new_prediction):
+    final_preds[i] = new_prediction
+
 
 # Инициализация комитета с весами агентов и коэффициентами значимости
 committee = ConsensusCommittee(
@@ -141,7 +149,11 @@ for i in range(len(labels)):
         )
 
         if result != "No Defect":
-            print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
+            # print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
+            if result == "Ok":
+                pass
+            if result == "Human needed":
+                expert_interface(file_paths[i], short_file_paths[i], decoded_label, update_prediction)
 
 
 # Оценка точности ансамблевой модели
@@ -149,9 +161,6 @@ accuracy = accuracy_score(labels_encoded, final_preds)
 print(f'Точность на тестовых данных: {accuracy * 100:.2f}%')
 print(classification_report(labels_encoded, final_preds, target_names=label_encoder.classes_))
 
-
-# Укороченные пути для удобства отображения
-short_file_paths = [os.path.basename(path) for path in file_paths]
 
 # Вывод результатов в таблице
 results_df = pd.DataFrame({
