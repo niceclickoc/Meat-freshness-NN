@@ -97,6 +97,16 @@ depth_map_preds_classes = np.argmax(depth_map_preds, axis=1)
 label_encoder = LabelEncoder()
 labels_encoded = label_encoder.fit_transform(labels)
 
+# Преобразование предсказаний в формат для мета-классификатора
+X_meta = np.stack([chromatic_preds_classes, hog_preds_classes, depth_map_preds_classes], axis=1)
+
+# Обучение мета-классификатора с использованием градиентного бустинга
+meta_clf = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+meta_clf.fit(X_meta, labels_encoded)
+
+# Ансамблевое предсказание мета-классификатором
+final_preds = meta_clf.predict(X_meta)
+
 
 # Инициализация комитета с весами агентов и коэффициентами значимости
 committee = ConsensusCommittee(
@@ -107,39 +117,32 @@ committee = ConsensusCommittee(
 # Агент консенсуса: использование для принятия решений
 for i in range(len(labels)):
     # print(f"Хроматическое предсказание: {chromatic_preds[i]}, HOG предсказание: {hog_preds[i]}, Depth Map предсказание: {depth_map_preds[i]}")
-    chromatic_half_fresh_prob = chromatic_preds[i][1]  # Вероятность для Half-Fresh
-    chromatic_spoiled_prob = chromatic_preds[i][2]  # Вероятность для Spoiled
+    decoded_label = label_encoder.inverse_transform([final_preds[i]])[0]
 
-    hog_half_fresh_prob = hog_preds[i][1]  # Вероятность для Half-Fresh
-    hog_spoiled_prob = hog_preds[i][2]  # Вероятность для Spoiled
+    if decoded_label != "Spoiled":
+        chromatic_half_fresh_prob = chromatic_preds[i][1]  # Вероятность для Half-Fresh
+        chromatic_spoiled_prob = chromatic_preds[i][2]  # Вероятность для Spoiled
 
-    depth_map_half_fresh_prob = depth_map_preds[i][1]  # Вероятность для Half-Fresh
-    depth_map_spoiled_prob = depth_map_preds[i][2]  # Вероятность для Spoiled
+        hog_half_fresh_prob = hog_preds[i][1]  # Вероятность для Half-Fresh
+        hog_spoiled_prob = hog_preds[i][2]  # Вероятность для Spoiled
 
-    chromatic_sum = chromatic_half_fresh_prob + chromatic_spoiled_prob
-    hog_sum = hog_half_fresh_prob + hog_spoiled_prob
-    depth_map_sum = depth_map_half_fresh_prob + depth_map_spoiled_prob
+        depth_map_half_fresh_prob = depth_map_preds[i][1]  # Вероятность для Half-Fresh
+        depth_map_spoiled_prob = depth_map_preds[i][2]  # Вероятность для Spoiled
 
-    result, final_prob = committee.evaluate(
-        chromatic_sum.reshape(1, -1),
-        hog_sum.reshape(1, -1),
-        depth_map_sum.reshape(1, -1),
-        pred_prob=None  # Сюда Ppred, когда будет
-    )
+        chromatic_sum = chromatic_half_fresh_prob + chromatic_spoiled_prob
+        hog_sum = hog_half_fresh_prob + hog_spoiled_prob
+        depth_map_sum = depth_map_half_fresh_prob + depth_map_spoiled_prob
 
-    if result != "No Defect":
-        print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
+        result, final_prob = committee.evaluate(
+            chromatic_sum.reshape(1, -1),
+            hog_sum.reshape(1, -1),
+            depth_map_sum.reshape(1, -1),
+            pred_prob=None  # Сюда Ppred, когда будет
+        )
 
+        if result != "No Defect":
+            print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
 
-# Преобразование предсказаний в формат для мета-классификатора
-X_meta = np.stack([chromatic_preds_classes, hog_preds_classes, depth_map_preds_classes], axis=1)
-
-# Обучение мета-классификатора с использованием градиентного бустинга
-meta_clf = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
-meta_clf.fit(X_meta, labels_encoded)
-
-# Ансамблевое предсказание мета-классификатором
-final_preds = meta_clf.predict(X_meta)
 
 # Оценка точности ансамблевой модели
 accuracy = accuracy_score(labels_encoded, final_preds)

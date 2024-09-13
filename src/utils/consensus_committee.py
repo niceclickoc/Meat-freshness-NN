@@ -70,7 +70,7 @@ class ConsensusCommittee:
         # Step 4: Check if consensus process is needed
         elif self.threshold_consensus_lower <= result <= self.threshold_consensus_upper:
             print("резулт до обработки", result)
-            final_result = result * 0.22
+            final_result = result * 0.85
             if final_result <= self.threshold_consensus_lower:
                 return "Start Consensus Process", final_result
             else:
