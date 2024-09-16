@@ -4,7 +4,7 @@ from PIL import Image, ImageTk
 def expert_interface(image_path, file_name, model_prediction, update_prediction_callback):
     root = tk.Tk()
     root.title("Помощь эксперта")
-    root.geometry("500x500")
+    root.geometry("500x500+300+200")
 
     img = Image.open(image_path)
     img = img.resize((300, 300))

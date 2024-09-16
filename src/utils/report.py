@@ -46,6 +46,7 @@ def generate_report(supplier_number, total_meat, fresh_meat, half_fresh_meat, sp
             sheet.row_dimensions[row[0].row].height = 15
 
         workbook.save(output_file)
+        print("="*121)
         print(f"Создан новый отчет: {output_file}")
 
     else:
@@ -72,4 +73,5 @@ def generate_report(supplier_number, total_meat, fresh_meat, half_fresh_meat, sp
             sheet.row_dimensions[row[0].row].height = 15
 
         workbook.save(output_file)
+        print("="*121)
         print(f"Данные добавлены в существующий отчет: {output_file}")

@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import random
 
-from openpyxl.styles.builtins import output
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report
@@ -113,9 +112,17 @@ final_preds = meta_clf.predict(X_meta)
 short_file_paths = [os.path.basename(path) for path in file_paths]
 
 
+# Список для отслеживания изменений предсказаний
+expert_corrections = []
+
+# Сохранение оригинальных предсказаний перед вмешательством эксперта
+original_preds = final_preds.copy()
+
 # Колбэк для обновления предсказаний от эксперта
 def update_prediction(new_prediction):
-    final_preds[i] = new_prediction
+    if final_preds[i] != new_prediction:
+        expert_corrections.append(i)
+        final_preds[i] = new_prediction
 
 
 # Инициализация комитета с весами агентов и коэффициентами значимости
@@ -159,9 +166,28 @@ for i in range(len(labels)):
 
 
 # Оценка точности ансамблевой модели
-accuracy = accuracy_score(labels_encoded, final_preds)
-print(f'Точность на тестовых данных: {accuracy * 100:.2f}%')
-print(classification_report(labels_encoded, final_preds, target_names=label_encoder.classes_))
+# accuracy = accuracy_score(labels_encoded, final_preds)
+# print(f'Точность на тестовых данных: {accuracy * 100:.2f}%')
+# print(classification_report(labels_encoded, final_preds, target_names=label_encoder.classes_))
+
+# Оценка точности до вмешательства эксперта
+accuracy_before_expert = accuracy_score(labels_encoded, original_preds)
+print(f'\nТочность на тестовых данных без учета эксперта: {accuracy_before_expert * 100:.2f}%\n')
+print(classification_report(labels_encoded, original_preds, target_names=label_encoder.classes_))
+
+# Сколько раз эксперт изменил предсказание
+num_corrections = len(expert_corrections)
+print(f"Количество изменений от эксперта: {num_corrections}")
+
+# Ошибки до вмешательства эксперта (на основе точности до вмешательства)
+errors_before_expert = (1 - accuracy_before_expert) * len(labels_encoded)
+
+# Пересчитываем точность, учитывая, что исправления эксперта указывают на ошибки моделей
+errors_after_expert = errors_before_expert + num_corrections
+correct_predictions_after_expert = len(labels_encoded) - errors_after_expert
+accuracy_with_expert = correct_predictions_after_expert / len(labels_encoded)
+
+print(f'\nТочность на тестовых данных (с учетом ошибок моделей, выявленных экспертом): {accuracy_with_expert * 100:.2f}%\n')
 
 
 # Вывод результатов в таблице
@@ -175,6 +201,7 @@ results_df = pd.DataFrame({
 })
 
 print(results_df.to_string(index=False))
+
 
 # Подсчет количества свежего, полу-свежего и испорченного мяса
 fresh_label = label_encoder.transform(['Fresh'])[0]
