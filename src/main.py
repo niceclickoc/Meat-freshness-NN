@@ -12,6 +12,7 @@ from xgboost import XGBClassifier
 
 from src.utils.consensus_committee import ConsensusCommittee
 from src.utils.expert_interface import expert_interface
+from src.utils.user_interface import main as ui_main
 from src.utils.report import generate_report
 
 # Пути к моделям
@@ -26,8 +27,9 @@ depth_map_model = load_model(depth_map_model_path)
 
 # Пути к тестовым данным
 test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
-test_distorted_image = './test/distorted_test.jpg' # ДЛЯ ТЕСТА
 
+# Тестовое изображение
+test_image_path, selected_class = ui_main()
 
 # Функция для загрузки данных и получения предсказаний от модели
 def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_size=(224, 224)):
@@ -48,8 +50,9 @@ def load_and_predict(model, preprocess_func, data_dir, num_samples=100, target_s
     # Выбираем случайные изображения
     random_samples = random.sample(all_images, num_samples)
 
-    # Тестовое изображение (ДЛЯ ТЕСТА)
-    random_samples.append((test_distorted_image, 'Spoiled'))
+    # Тестовое изображение
+    if test_image_path and selected_class:
+        random_samples.append((test_image_path, selected_class))
 
     for img_path, class_name in random_samples:
         try:
@@ -187,7 +190,7 @@ errors_after_expert = errors_before_expert + num_corrections
 correct_predictions_after_expert = len(labels_encoded) - errors_after_expert
 accuracy_with_expert = correct_predictions_after_expert / len(labels_encoded)
 
-print(f'\nТочность на тестовых данных (с учетом ошибок моделей, выявленных экспертом): {accuracy_with_expert * 100:.2f}%\n')
+print(f'\nТочность на тестовых данных после внедрения эксперта: {accuracy_with_expert * 100:.2f}%\n')
 
 
 # Вывод результатов в таблице

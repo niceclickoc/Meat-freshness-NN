@@ -5,7 +5,6 @@ from datetime import datetime
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Alignment
-from openpyxl.worksheet.dimensions import ColumnDimension, RowDimension
 
 def generate_report(supplier_number, total_meat, fresh_meat, half_fresh_meat, spoiled_meat, spoiled_meat_images, output_file):
 
