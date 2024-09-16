@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import random
 
+from openpyxl.styles.builtins import output
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report
@@ -12,6 +13,7 @@ from xgboost import XGBClassifier
 
 from src.utils.consensus_committee import ConsensusCommittee
 from src.utils.expert_interface import expert_interface
+from src.utils.report import generate_report
 
 # Пути к моделям
 chromatic_model_path = './models/chromatic_model.h5'
@@ -173,3 +175,35 @@ results_df = pd.DataFrame({
 })
 
 print(results_df.to_string(index=False))
+
+# Подсчет количества свежего, полу-свежего и испорченного мяса
+fresh_label = label_encoder.transform(['Fresh'])[0]
+half_fresh_label = label_encoder.transform(['Half-Fresh'])[0]
+spoiled_label = label_encoder.transform(['Spoiled'])[0]
+
+fresh_count = np.sum(final_preds == fresh_label)
+half_fresh_count = np.sum(final_preds == half_fresh_label)
+spoiled_count = np.sum(final_preds == spoiled_label)
+spoiled_meat_list = [file_paths[i] for i, pred in enumerate(final_preds) if pred == 2]
+
+# Переменные с данными для отчета
+supplier_number = 1 if not os.path.exists('./results/report.xlsx') else pd.read_excel('./results/report.xlsx').shape[0] + 1
+total_meat = len(labels)
+fresh_meat = fresh_count
+half_fresh_meat = half_fresh_count
+spoiled_meat = spoiled_count
+spoiled_meat_images = spoiled_meat_list
+output_excel = './results/report.xlsx'
+
+# Вызов функции для генерации отчета
+try:
+    generate_report(supplier_number,
+                    total_meat,
+                    fresh_meat,
+                    half_fresh_meat,
+                    spoiled_meat,
+                    spoiled_meat_images,
+                    output_excel)
+except PermissionError:
+    print("="*121)
+    print("Ошибка записи в отчет! Закройте файл")
