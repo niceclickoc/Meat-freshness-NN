@@ -194,6 +194,7 @@ print(f'\nТочность на тестовых данных после вне�
 
 
 # Вывод результатов в таблице
+print("="*121)
 results_df = pd.DataFrame({
     'Файл': short_file_paths,
     'Метка': label_encoder.inverse_transform(labels_encoded),

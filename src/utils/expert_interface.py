@@ -1,50 +1,73 @@
-import tkinter as tk
-from PIL import Image, ImageTk
+from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtWidgets import (
+    QApplication,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget
+)
 
 def expert_interface(image_path, file_name, model_prediction, update_prediction_callback):
-    root = tk.Tk()
-    root.title("Помощь эксперта")
-    root.geometry("500x500+300+200")
+    class ExpertWindow(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.init_ui()
 
-    img = Image.open(image_path)
-    img = img.resize((300, 300))
-    img_tk = ImageTk.PhotoImage(img)
+        def init_ui(self):
+            self.setWindowTitle("Помощь эксперта")
+            self.resize(500, 600)  # Устанавливаем размер окна
 
-    image_label = tk.Label(root, image=img_tk)
-    image_label.pack(pady=10)
+            self.layout = QVBoxLayout()
+            self.setLayout(self.layout)
 
-    file_label = tk.Label(root, text=f"Файл: {file_name}")
-    file_label.pack(pady=5)
+            # Изображение
+            img_label = QLabel()
+            pixmap = QtGui.QPixmap(image_path)
+            pixmap = pixmap.scaled(300, 300, aspectRatioMode=QtCore.Qt.KeepAspectRatio)
+            img_label.setPixmap(pixmap)
+            img_label.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(img_label)
 
-    prediction_label = tk.Label(root, text=f"Модели считают: {model_prediction}")
-    prediction_label.pack(pady=5)
+            # Информация о файле и предсказании
+            file_label = QLabel(f"Файл: {file_name}")
+            file_label.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(file_label)
 
-    button_label = tk.Label(root, text="Выберите так ли это, или опровергните предсказание")
-    button_label.pack(pady=5)
+            prediction_label = QLabel(f"Модели считают: {model_prediction}")
+            prediction_label.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(prediction_label)
 
+            # Текст инструкции
+            instruction_label = QLabel("Выберите правильный класс или подтвердите предсказание модели")
+            instruction_label.setAlignment(QtCore.Qt.AlignCenter)
+            self.layout.addWidget(instruction_label)
 
-    button_frame = tk.Frame(root)
-    button_frame.pack(pady=10)
+            # Кнопки выбора класса
+            button_layout = QHBoxLayout()
+            fresh_button = QPushButton("Fresh")
+            half_fresh_button = QPushButton("Half-Fresh")
+            spoiled_button = QPushButton("Spoiled")
 
-    def set_fresh():
-        update_prediction_callback(0)
-        root.destroy()
+            fresh_button.clicked.connect(lambda: self.button_clicked(0))
+            half_fresh_button.clicked.connect(lambda: self.button_clicked(1))
+            spoiled_button.clicked.connect(lambda: self.button_clicked(2))
 
-    def set_half_fresh():
-        update_prediction_callback(1)
-        root.destroy()
+            button_layout.addWidget(fresh_button)
+            button_layout.addWidget(half_fresh_button)
+            button_layout.addWidget(spoiled_button)
 
-    def set_spoiled():
-        update_prediction_callback(2)
-        root.destroy()
+            self.layout.addLayout(button_layout)
 
-    button_fresh = tk.Button(button_frame, text="Fresh", command=set_fresh)
-    button_fresh.grid(row=0, column=0, padx=5)
+        def button_clicked(self, new_prediction):
+            update_prediction_callback(new_prediction)
+            self.close()
 
-    button_half_fresh = tk.Button(button_frame, text="Half-Fresh", command=set_half_fresh)
-    button_half_fresh.grid(row=0, column=1, padx=5)
+    # Проверяем, есть ли существующий экземпляр QApplication
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QApplication([])
 
-    button_spoiled = tk.Button(button_frame, text="Spoiled", command=set_spoiled)
-    button_spoiled.grid(row=0, column=2, padx=5)
-
-    root.mainloop()
+    window = ExpertWindow()
+    window.show()
+    app.exec_()

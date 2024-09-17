@@ -1,3 +1,5 @@
+import sys
+
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtWidgets import (
     QApplication,
@@ -10,7 +12,7 @@ from PyQt5.QtWidgets import (
     QWidget,
     QMessageBox
 )
-import sys
+
 
 class UserInterface(QWidget):
     def __init__(self):
@@ -100,7 +102,7 @@ class UserInterface(QWidget):
         # Кнопка выбора изображения
         self.select_button = QPushButton("Выбрать изображение")
         self.select_button.clicked.connect(self.load_image)
-        self.select_button.setFixedWidth(200)  # Фиксированная ширина кнопки
+        self.select_button.setFixedWidth(250)  # Фиксированная ширина кнопки
 
         # Центрирование кнопки
         select_button_layout = QHBoxLayout()
@@ -115,7 +117,7 @@ class UserInterface(QWidget):
         # Кнопка продолжения без изображения
         self.skip_button = QPushButton("Продолжить без изображения")
         self.skip_button.clicked.connect(self.skip_image)
-        self.skip_button.setFixedWidth(200)
+        self.skip_button.setFixedWidth(250)
 
         # Центрирование кнопки
         skip_button_layout = QHBoxLayout()
