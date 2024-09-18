@@ -73,4 +73,4 @@ def generate_report(supplier_number, total_meat, fresh_meat, half_fresh_meat, sp
 
         workbook.save(output_file)
         print("="*121)
-        print(f"Данные добавлены в существующий отчет: {output_file}")
+        print(f"Данные добавлены в отчет: {output_file}")

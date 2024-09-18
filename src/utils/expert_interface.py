@@ -15,7 +15,7 @@ def expert_interface(image_path, file_name, model_prediction, update_prediction_
             self.init_ui()
 
         def init_ui(self):
-            self.setWindowTitle("Помощь эксперта")
+            self.setWindowTitle("Необходима помощь эксперта")
             self.resize(500, 600)  # Устанавливаем размер окна
 
             self.layout = QVBoxLayout()
@@ -39,7 +39,7 @@ def expert_interface(image_path, file_name, model_prediction, update_prediction_
             self.layout.addWidget(prediction_label)
 
             # Текст инструкции
-            instruction_label = QLabel("Выберите правильный класс или подтвердите предсказание модели")
+            instruction_label = QLabel("Подтвердите или опровергните предсказание модели")
             instruction_label.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(instruction_label)
 
