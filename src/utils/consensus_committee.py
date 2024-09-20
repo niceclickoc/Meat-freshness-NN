@@ -1,7 +1,7 @@
 import numpy as np
 
 class ConsensusCommittee:
-    def __init__(self, weights, agent_coeffs, threshold_auto_confirm=0.95, threshold_consensus_lower=0.6,
+    def __init__(self, weights, agent_coeffs, threshold_auto_confirm=0.95, threshold_consensus_lower=0.62,
                  threshold_consensus_upper=0.8, threshold_pred_model=0.85):
         """
         Initialize the committee with weights and agent coefficients.
@@ -23,6 +23,10 @@ class ConsensusCommittee:
     def sigmoid(self, x):
         """Sigmoid function for probability scaling."""
         return 1 / (1 + np.exp(-x))
+
+    def sigmoid2(self, x, y):
+        # return (x * w1 + y(0,9) * w2) / w1 + w2
+        return (x + y) / (1 + 1)
 
     def weighted_average(self, chromatic_prob, hog_prob, depth_prob):
         """
@@ -69,12 +73,23 @@ class ConsensusCommittee:
 
         # Step 4: Check if consensus process is needed
         elif self.threshold_consensus_lower <= result <= self.threshold_consensus_upper:
-            # print("резулт до обработки", result)
-            final_result = result * 0.85
+            print("резулт до обработки", result)
+            final_result = result / 0.8
+            # a = (self.weights[0] * self.agent_coeffs[0] * chromatic_prob +
+            #              self.weights[1] * self.agent_coeffs[1] * hog_prob +
+            #              self.weights[2] * self.agent_coeffs[2] * depth_prob +
+            #              self.weights[3] * self.agent_coeffs[3] * 0.9)
+            # b = sum(self.weights)
+            # final_result = a / b
+            # final_result2 = self.sigmoid(final_result)
+            # final_result = self.sigmoid2(result, 0.7)
+            print('НОВЫЙ РЕЗУЛЬТАТ', final_result)
             if final_result <= self.threshold_consensus_lower:
                 return "Ok", final_result
-            else:
+            if final_result <= self.threshold_consensus_upper:
                 return "Human needed", final_result
+            else:
+                return "Defect Confirmed", final_result
 
         # Step 5: Check if probabilistic prediction model should be used
         # elif result <= self.threshold_pred_model:
