@@ -1,4 +1,40 @@
 import numpy as np
+from openpyxl import load_workbook
+
+
+# Import data from Excel report
+def load_data_from_excel(file):
+    """
+    Loading quantity of fresh, half-fresh and spoiled meat to calculate the supplier's coefficient
+    For now we take only the last stroke data
+
+    :return: quantity of fresh, half-fresh and spoiled meat
+    """
+    try:
+        workbook = load_workbook(file)
+        sheet = workbook.active
+
+        def get_last_row_with_data(sheet):
+            for row in range(sheet.max_row, 0, -1):
+                if any(cell.value is not None for cell in sheet[row]):
+                    return row
+            return None
+
+        last_row = get_last_row_with_data(sheet)
+
+        fresh = sheet.cell(row=last_row, column=4).value
+        half_fresh = sheet.cell(row=last_row, column=5).value
+        spoiled = sheet.cell(row=last_row, column=6).value
+        return fresh, half_fresh, spoiled
+
+    except FileNotFoundError:
+        print("Файл не найден или ещё не создан")
+        return None, None, None
+
+    except Exception as e:
+        print("Ошибка", e)
+        return None, None, None
+
 
 class ConsensusCommittee:
     def __init__(self, weights, agent_coeffs, threshold_auto_confirm=0.95, threshold_consensus_lower=0.62,
@@ -23,10 +59,6 @@ class ConsensusCommittee:
     def sigmoid(self, x):
         """Sigmoid function for probability scaling."""
         return 1 / (1 + np.exp(-x))
-
-    def sigmoid2(self, x, y):
-        # return (x * w1 + y(0,9) * w2) / w1 + w2
-        return (x + y) / (1 + 1)
 
     def weighted_average(self, chromatic_prob, hog_prob, depth_prob):
         """
@@ -73,17 +105,23 @@ class ConsensusCommittee:
 
         # Step 4: Check if consensus process is needed
         elif self.threshold_consensus_lower <= result <= self.threshold_consensus_upper:
-            print("резулт до обработки", result)
-            final_result = result / 0.8
-            # a = (self.weights[0] * self.agent_coeffs[0] * chromatic_prob +
-            #              self.weights[1] * self.agent_coeffs[1] * hog_prob +
-            #              self.weights[2] * self.agent_coeffs[2] * depth_prob +
-            #              self.weights[3] * self.agent_coeffs[3] * 0.9)
-            # b = sum(self.weights)
-            # final_result = a / b
-            # final_result2 = self.sigmoid(final_result)
-            # final_result = self.sigmoid2(result, 0.7)
-            print('НОВЫЙ РЕЗУЛЬТАТ', final_result)
+            print("="*40)
+            print("Вероятность испорченности", result)
+            fresh, half_fresh, spoiled = load_data_from_excel('./results/report.xlsx')
+
+            def supplier_coef(fresh, half_fresh, spoiled):
+                if (fresh and half_fresh and spoiled) is not None:
+                    a = (fresh * 1) + (half_fresh * 0.5) + (spoiled * 0)
+                    b = a / sum([fresh, half_fresh, spoiled])
+                    print('Коэффициент поставщика:',b)
+                    return b
+                else:
+                    return 0.9
+
+            final_result = result * (1 / supplier_coef(fresh, half_fresh, spoiled))
+
+            print('Вероятность с коэффициентом', final_result)
+            print("=" * 40)
             if final_result <= self.threshold_consensus_lower:
                 return "Ok", final_result
             if final_result <= self.threshold_consensus_upper:

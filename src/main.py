@@ -32,7 +32,7 @@ test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/v
 test_image_path, selected_class = ui_main()
 
 # Параметры множественных проходов
-MAX_PASSES = 5  # Максимальное количество попыток
+MAX_PASSES = 10  # Максимальное количество попыток
 SIMILARITY_THRESHOLD = 1  # Требуется полное совпадение предсказаний
 
 
@@ -240,7 +240,7 @@ for i in range(len(labels)):
             if result == "Human needed":
                 expert_interface(file_paths[i], short_file_paths[i], decoded_label, lambda new_pred: update_prediction(i, new_pred))
             if result == "Defect Confirmed":
-                print("УПАЛО В SPOILED")
+                print("Итог: УПАЛО В SPOILED")
                 update_prediction(i, 2)
 
 # Оценка точности до вмешательства эксперта
