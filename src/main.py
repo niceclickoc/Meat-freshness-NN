@@ -2,10 +2,10 @@ import os
 import cv2
 import numpy as np
 import pandas as pd
+import joblib
 import random
 
 from tensorflow.keras.models import load_model
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report
 from skimage.feature import hog
 from xgboost import XGBClassifier
@@ -15,15 +15,20 @@ from src.utils.expert_interface import expert_interface
 from src.utils.user_interface import main as ui_main
 from src.utils.report import generate_report
 
+
 # Пути к моделям
 chromatic_model_path = './models/chromatic_model.h5'
 hog_model_path = './models/hog_model.h5'
 depth_map_model_path = './models/depth_model.h5'
+meta_clf_path = './models/meta/meta_clf.joblib'
+meta_le_path = './models/meta/meta_label_encoder.joblib'
 
 # Загрузка моделей
 chromatic_model = load_model(chromatic_model_path)
 hog_model = load_model(hog_model_path)
 depth_map_model = load_model(depth_map_model_path)
+meta_clf = joblib.load(meta_clf_path)
+meta_le = joblib.load(meta_le_path)
 
 # Пути к тестовым данным
 test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
@@ -33,7 +38,6 @@ test_image_path, selected_class = ui_main()
 
 # Параметры множественных проходов
 MAX_PASSES = 10  # Максимальное количество попыток
-SIMILARITY_THRESHOLD = 1  # Требуется полное совпадение предсказаний
 
 
 # Функции предобработки для каждой модели
@@ -54,27 +58,28 @@ def preprocess_depth_map(image):
 
 
 # Функция для загрузки данных и получения предсказаний от модели с множественными проходами
-def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model, data_dir, num_samples=100, target_size_chromatic=(256, 256), target_size_hog=(128, 128), target_size_depth=(256, 256)):
+def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model, data_dir, num_samples=0, target_size_chromatic=(256, 256), target_size_hog=(128, 128), target_size_depth=(256, 256)):
     data = []
     labels = []
     file_paths = []
     class_names = os.listdir(data_dir)
     all_images = []
+    random_samples = []
 
     # Собираем все изображения из всех классов
-    for class_name in class_names:
-        class_dir = os.path.join(data_dir, class_name)
-        if os.path.isdir(class_dir):
-            for img_name in os.listdir(class_dir):
-                img_path = os.path.join(class_dir, img_name)
-                all_images.append((img_path, class_name))
-
-    # Выбираем случайные изображения
-    try:
-        random_samples = random.sample(all_images, num_samples)
-    except ValueError as e:
-        print(f"Ошибка при выборке случайных изображений: {e}")
-        random_samples = all_images  # Если меньше, чем num_samples, взять все
+    # for class_name in class_names:
+    #     class_dir = os.path.join(data_dir, class_name)
+    #     if os.path.isdir(class_dir):
+    #         for img_name in os.listdir(class_dir):
+    #             img_path = os.path.join(class_dir, img_name)
+    #             all_images.append((img_path, class_name))
+    #
+    # # Выбираем случайные изображения
+    # try:
+    #     random_samples = random.sample(all_images, num_samples)
+    # except ValueError as e:
+    #     print(f"Ошибка при выборке случайных изображений: {e}")
+    #     random_samples = all_images
 
     # Тестовое изображение
     if test_image_path and selected_class:
@@ -161,21 +166,19 @@ data_predictions, labels, file_paths = load_and_predict_multiple_passes(
     target_size_chromatic=(256, 256), target_size_hog=(128, 128), target_size_depth=(256, 256)
 )
 
+
 # Преобразование предсказаний в метки классов
 chromatic_preds_classes = np.array([d['chromatic_pred'] for d in data_predictions])
 hog_preds_classes = np.array([d['hog_pred'] for d in data_predictions])
 depth_map_preds_classes = np.array([d['depth_pred'] for d in data_predictions])
 
-# Кодирование меток
-label_encoder = LabelEncoder()
-labels_encoded = label_encoder.fit_transform(labels)
 
-# Преобразование предсказаний в формат для мета-классификатора
-X_meta = np.stack([chromatic_preds_classes, hog_preds_classes, depth_map_preds_classes], axis=1)
-
-# Обучение мета-классификатора с использованием градиентного бустинга
-meta_clf = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
-meta_clf.fit(X_meta, labels_encoded)
+# Encoder
+labels_encoded = meta_le.transform(labels)
+X_meta = np.stack([
+    chromatic_preds_classes,
+    hog_preds_classes,
+    depth_map_preds_classes], axis=1)
 
 # Ансамблевое предсказание мета-классификатором
 final_preds = meta_clf.predict(X_meta)
@@ -206,7 +209,7 @@ committee = ConsensusCommittee(
 # Агент консенсуса: использование для принятия решений
 for i in range(len(labels)):
     print(f"Хроматическое предсказание: {chromatic_preds_classes[i]}, HOG предсказание: {hog_preds_classes[i]}, Depth Map предсказание: {depth_map_preds_classes[i]}")
-    decoded_label = label_encoder.inverse_transform([final_preds[i]])[0]
+    decoded_label = meta_le.inverse_transform([final_preds[i]])[0]
 
     if decoded_label != "Spoiled":
         chromatic_half_fresh_prob = data_predictions[i]['chromatic_probs'][1]  # Вероятность для Half-Fresh
@@ -246,7 +249,7 @@ for i in range(len(labels)):
 # Оценка точности до вмешательства эксперта
 accuracy_before_expert = accuracy_score(labels_encoded, original_preds)
 print(f'\nТочность на тестовых данных без учета эксперта: {accuracy_before_expert * 100:.2f}%\n')
-print(classification_report(labels_encoded, original_preds, target_names=label_encoder.classes_))
+print(classification_report(labels_encoded, original_preds, labels=meta_le.transform(meta_le.classes_), target_names=meta_le.classes_, zero_division=0))
 
 # Сколько раз эксперт изменил предсказание
 num_corrections = len(expert_corrections)
@@ -267,20 +270,20 @@ print(f'\nТочность на тестовых данных после вне�
 print("="*121)
 results_df = pd.DataFrame({
     'Файл': short_file_paths,
-    'Метка': label_encoder.inverse_transform(labels_encoded),
-    'Chromatic': label_encoder.inverse_transform(chromatic_preds_classes),
-    'HOG': label_encoder.inverse_transform(hog_preds_classes),
-    'Depth Map': label_encoder.inverse_transform(depth_map_preds_classes),
-    'Итоговый вердикт': label_encoder.inverse_transform(final_preds)
+    'Метка': meta_le.inverse_transform(labels_encoded),
+    'Chromatic': meta_le.inverse_transform(chromatic_preds_classes),
+    'HOG': meta_le.inverse_transform(hog_preds_classes),
+    'Depth Map': meta_le.inverse_transform(depth_map_preds_classes),
+    'Итоговый вердикт': meta_le.inverse_transform(final_preds)
 })
 
 print(results_df.to_string(index=False))
 
 
 # Подсчет количества свежего, полу-свежего и испорченного мяса
-fresh_label = label_encoder.transform(['Fresh'])[0]
-half_fresh_label = label_encoder.transform(['Half-Fresh'])[0]
-spoiled_label = label_encoder.transform(['Spoiled'])[0]
+fresh_label = meta_le.transform(['Fresh'])[0]
+half_fresh_label = meta_le.transform(['Half-Fresh'])[0]
+spoiled_label = meta_le.transform(['Spoiled'])[0]
 
 fresh_count = np.sum(final_preds == fresh_label)
 half_fresh_count = np.sum(final_preds == half_fresh_label)

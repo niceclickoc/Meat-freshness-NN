@@ -1,3 +1,4 @@
+import sys
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtWidgets import (
     QApplication,
@@ -66,7 +67,7 @@ def expert_interface(image_path, file_name, model_prediction, update_prediction_
     # Проверяем, есть ли существующий экземпляр QApplication
     app = QtWidgets.QApplication.instance()
     if app is None:
-        app = QApplication([])
+        app = QApplication([sys.argv])
 
     window = ExpertWindow()
     window.show()
