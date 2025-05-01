@@ -118,7 +118,10 @@ class ConsensusCommittee:
                 else:
                     return 0.9
 
-            final_result = result * (1 / supplier_coef(fresh, half_fresh, spoiled))
+            try:
+                final_result = result * (1 / supplier_coef(fresh, half_fresh, spoiled))
+            except ZeroDivisionError:
+                final_result = result
 
             print('Вероятность с коэффициентом', final_result)
             print("=" * 40)

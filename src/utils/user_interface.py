@@ -20,6 +20,7 @@ class UserInterface(QWidget):
         self.image_path = None
         self.selected_class = None
         self.init_ui()
+        self._action = None
 
     def init_ui(self):
         self.setWindowTitle("Загрузите Ваше тестовое изображение!")
@@ -53,7 +54,8 @@ class UserInterface(QWidget):
         self.main_layout.addSpacing(20)
 
         # Текст "Выберите класс"
-        self.select_class_label = QLabel("Выберите класс")
+        self.select_class_label = QLabel()
+        # self.select_class_label = QLabel("Выберите класс")
         self.select_class_label.setAlignment(QtCore.Qt.AlignCenter)
         font_label = QtGui.QFont()
         font_label.setPointSize(10)  # Размер шрифта
@@ -62,19 +64,19 @@ class UserInterface(QWidget):
         self.main_layout.addWidget(self.select_class_label)
 
         # Отступ после текста "Выберите класс"
-        self.main_layout.addSpacing(10)
+        # self.main_layout.addSpacing(10)
 
         # Выпадающий список для выбора класса
         self.class_combo_box = QComboBox()
-        self.class_combo_box.addItems(["Fresh", "Half-Fresh", "Spoiled"])
-        self.class_combo_box.setVisible(False)
+        # self.class_combo_box.addItems(["Fresh", "Half-Fresh", "Spoiled"])
+        # self.class_combo_box.setVisible(False)
 
         # Центрирование списка
-        class_combo_layout = QHBoxLayout()
-        class_combo_layout.addStretch()
-        class_combo_layout.addWidget(self.class_combo_box)
-        class_combo_layout.addStretch()
-        self.main_layout.addLayout(class_combo_layout)
+        # class_combo_layout = QHBoxLayout()
+        # class_combo_layout.addStretch()
+        # class_combo_layout.addWidget(self.class_combo_box)
+        # class_combo_layout.addStretch()
+        # self.main_layout.addLayout(class_combo_layout)
 
         # Отступ после выпадающего списка
         self.main_layout.addSpacing(10)
@@ -152,8 +154,8 @@ class UserInterface(QWidget):
                 self.adjustSize()  # Подгон размера окна под содержимое
 
                 # Показываем текст "Выберите класс" и выпадающий список
-                self.select_class_label.setVisible(True)
-                self.class_combo_box.setVisible(True)
+                # self.select_class_label.setVisible(True)
+                # self.class_combo_box.setVisible(True)
 
                 # Показываем кнопку "Продолжить"
                 self.continue_button.setVisible(True)
@@ -187,21 +189,29 @@ class UserInterface(QWidget):
         self.setMinimumSize(500, 300)
         self.adjustSize()
 
-        # Закрываем окно
+        self._action = 'skip'
         self.close()
 
     # Функция на передачу изображения
     def continue_process(self):
         # Получаем выбранный класс
-        if self.class_combo_box.isVisible():
-            self.selected_class = self.class_combo_box.currentText()
-        else:
-            self.selected_class = None
+        # if self.class_combo_box.isVisible():
+        #     self.selected_class = self.class_combo_box.currentText()
+        # else:
+        #     self.selected_class = None
+        self.selected_class = None
+        self._action = 'continue'
         self.close()
+
+    # Перехват "крестика"
+    def closeEvent(self, event):
+        if self._action is None:
+            self._action = 'abort'
+        event.accept()
 
     # Получаем данные для передачи в лист
     def get_image_info(self):
-        return self.image_path, self.selected_class
+        return self.image_path, self.selected_class, self._action
 
 # Инициализатор
 def main():
