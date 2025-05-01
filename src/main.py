@@ -1,5 +1,4 @@
-import os
-import sys
+import os, sys, pathlib
 import cv2
 import numpy as np
 import pandas as pd
@@ -17,11 +16,14 @@ from src.utils.report import generate_report
 
 
 # Пути к моделям
-chromatic_model_path = './models/chromatic_model.h5'
-hog_model_path = './models/hog_model.h5'
-depth_map_model_path = './models/depth_model.h5'
-meta_clf_path = './models/meta/meta_clf.joblib'
-meta_le_path = './models/meta/meta_label_encoder.joblib'
+def rsrc(*parts):
+    base = getattr(sys, "_MEIPASS", pathlib.Path(__file__).resolve().parent)
+    return os.path.join(base, *parts)
+chromatic_model_path = rsrc('models', 'chromatic_model.h5')
+hog_model_path = rsrc('models', 'hog_model.h5')
+depth_map_model_path = rsrc('models', 'depth_model.h5')
+meta_clf_path = rsrc('models', 'meta', 'meta_clf.joblib')
+meta_le_path = rsrc('models', 'meta', 'meta_label_encoder.joblib')
 
 # Загрузка моделей
 chromatic_model = load_model(chromatic_model_path)
@@ -42,6 +44,7 @@ if ui_action == 'abort':
 # Параметры множественных проходов
 MAX_PASSES = 10  # Максимальное количество попыток
 
+WRITE_TO_REPORT = False
 
 # Функции предобработки для каждой модели
 def preprocess_chromatic(image):
@@ -328,14 +331,17 @@ spoiled_meat_images = spoiled_meat_list
 output_excel = './results/report.xlsx'
 
 # Вызов функции для генерации отчета
-try:
-    generate_report(supplier_number,
-                    total_meat,
-                    fresh_meat,
-                    half_fresh_meat,
-                    spoiled_meat,
-                    spoiled_meat_images,
-                    output_excel)
-except PermissionError:
-    print("="*121)
-    print("Ошибка записи в отчет! Закройте файл")
+if WRITE_TO_REPORT and total_meat:
+    try:
+        generate_report(supplier_number,
+                        total_meat,
+                        fresh_meat,
+                        half_fresh_meat,
+                        spoiled_meat,
+                        spoiled_meat_images,
+                        output_excel)
+    except PermissionError:
+        print("="*121)
+        print("Ошибка записи в отчет! Закройте файл")
+else:
+    pass
