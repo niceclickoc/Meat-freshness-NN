@@ -13,6 +13,7 @@ def expert_interface(image_path, file_name, model_prediction, update_prediction_
     class ExpertWindow(QWidget):
         def __init__(self):
             super().__init__()
+            self._closed_by_button = False
             self.init_ui()
 
         def init_ui(self):
@@ -61,13 +62,20 @@ def expert_interface(image_path, file_name, model_prediction, update_prediction_
             self.layout.addLayout(button_layout)
 
         def button_clicked(self, new_prediction):
+            self._closed_by_button = True
             update_prediction_callback(new_prediction)
             self.close()
+
+        def closeEvent(self, event: QtGui.QCloseEvent):
+            if not self._closed_by_button:
+                QtWidgets.QApplication.quit()
+                sys.exit(0)
+            event.accept()
 
     # Проверяем, есть ли существующий экземпляр QApplication
     app = QtWidgets.QApplication.instance()
     if app is None:
-        app = QApplication([sys.argv])
+        app = QApplication(sys.argv)
 
     window = ExpertWindow()
     window.show()

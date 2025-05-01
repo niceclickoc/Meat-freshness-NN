@@ -1,4 +1,5 @@
 import os
+import sys
 import cv2
 import numpy as np
 import pandas as pd
@@ -8,7 +9,6 @@ import random
 from tensorflow.keras.models import load_model
 from sklearn.metrics import accuracy_score, classification_report
 from skimage.feature import hog
-from xgboost import XGBClassifier
 
 from src.utils.consensus_committee import ConsensusCommittee
 from src.utils.expert_interface import expert_interface
@@ -33,8 +33,11 @@ meta_le = joblib.load(meta_le_path)
 # Пути к тестовым данным
 test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
 
-# Тестовое изображение
-test_image_path, selected_class = ui_main()
+# UI
+test_image_path, selected_class, ui_action = ui_main()
+user_has_label = False
+if ui_action == 'abort':
+    sys.exit(0)
 
 # Параметры множественных проходов
 MAX_PASSES = 10  # Максимальное количество попыток
@@ -66,7 +69,7 @@ def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model
     all_images = []
     random_samples = []
 
-    # Собираем все изображения из всех классов
+    # # Собираем все изображения из всех классов
     # for class_name in class_names:
     #     class_dir = os.path.join(data_dir, class_name)
     #     if os.path.isdir(class_dir):
@@ -85,6 +88,9 @@ def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model
     if test_image_path and selected_class:
         random_samples.append((test_image_path, selected_class))
         print(f"Добавлено тестовое изображение: {test_image_path} с меткой {selected_class}")
+    elif test_image_path:
+        random_samples.append((test_image_path, None))
+        print(f"Добавлено тестовое изображение без метки: {test_image_path}")
 
     for img_path, class_name in random_samples:
         print(f"Обрабатывается изображение: {img_path} с меткой {class_name}")
@@ -157,14 +163,22 @@ def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model
         else:
             print(f"Изображение {img_path} не было добавлено из-за отсутствия предсказаний.")
 
+    global user_has_label
+    user_has_label = any(lab is not None for lab in labels)
+
     return data, labels, file_paths
 
 
 # Получение предсказаний с множественными проходами
 data_predictions, labels, file_paths = load_and_predict_multiple_passes(
-    chromatic_model, hog_model, depth_map_model, test_dir, num_samples=100,
+    chromatic_model, hog_model, depth_map_model, test_dir, num_samples=0,
     target_size_chromatic=(256, 256), target_size_hog=(128, 128), target_size_depth=(256, 256)
 )
+
+# Если пусто
+if not file_paths:
+    print("Изображений для обработки нет — программа завершена.")
+    sys.exit(0)
 
 
 # Преобразование предсказаний в метки классов
@@ -174,7 +188,9 @@ depth_map_preds_classes = np.array([d['depth_pred'] for d in data_predictions])
 
 
 # Encoder
-labels_encoded = meta_le.transform(labels)
+labeled_idx = [i for i, lab in enumerate(labels) if lab is not None]
+labels_encoded = meta_le.transform([labels[i] for i in labeled_idx]) if labeled_idx else np.array([])
+
 X_meta = np.stack([
     chromatic_preds_classes,
     hog_preds_classes,
@@ -193,10 +209,12 @@ expert_corrections = []
 # Сохранение оригинальных предсказаний перед вмешательством эксперта
 original_preds = final_preds.copy()
 
+
 # Колбэк для обновления предсказаний от эксперта
-def update_prediction(i, new_prediction):
+def update_prediction(i, new_prediction, by_expert: bool = True):
     if final_preds[i] != new_prediction:
-        expert_corrections.append(i)
+        if by_expert:
+            expert_corrections.append(i)
         final_preds[i] = new_prediction
 
 
@@ -241,41 +259,50 @@ for i in range(len(labels)):
             if result == "Ok":
                 print(f"Файл: {file_paths[i]}, Итог: {result}, Вероятность: {final_prob}")
             if result == "Human needed":
-                expert_interface(file_paths[i], short_file_paths[i], decoded_label, lambda new_pred: update_prediction(i, new_pred))
+                expert_interface(file_paths[i], short_file_paths[i], decoded_label, lambda new_pred: update_prediction(i, new_pred, by_expert=True))
             if result == "Defect Confirmed":
                 print("Итог: УПАЛО В SPOILED")
-                update_prediction(i, 2)
+                update_prediction(i, meta_le.transform(['Spoiled'])[0], by_expert=False)
+
 
 # Оценка точности до вмешательства эксперта
-accuracy_before_expert = accuracy_score(labels_encoded, original_preds)
-print(f'\nТочность на тестовых данных без учета эксперта: {accuracy_before_expert * 100:.2f}%\n')
-print(classification_report(labels_encoded, original_preds, labels=meta_le.transform(meta_le.classes_), target_names=meta_le.classes_, zero_division=0))
+if len(labels_encoded):
+    preds_subset = original_preds[labeled_idx]
+    accuracy_before_expert = accuracy_score(labels_encoded, preds_subset)
+    print(f'\nТочность на тестовых данных без учета эксперта: {accuracy_before_expert * 100:.2f}%\n')
+    print(classification_report(labels_encoded, preds_subset, labels=meta_le.transform(meta_le.classes_), target_names=meta_le.classes_, zero_division=0))
+else:
+    print("\nИстинных меток нет — этап accuracy / classification_report пропущен.\n")
 
 # Сколько раз эксперт изменил предсказание
 num_corrections = len(expert_corrections)
 print(f"Количество изменений от эксперта: {num_corrections}")
 
-# Ошибки до вмешательства эксперта (на основе точности до вмешательства)
-errors_before_expert = (1 - accuracy_before_expert) * len(labels_encoded)
 
 # Пересчитываем точность, учитывая, что исправления эксперта указывают на ошибки моделей
-errors_after_expert = errors_before_expert + num_corrections
-correct_predictions_after_expert = len(labels_encoded) - errors_after_expert
-accuracy_with_expert = correct_predictions_after_expert / len(labels_encoded)
+if user_has_label and len(labels_encoded):
+    # Ошибки до вмешательства эксперта (на основе точности до вмешательства)
+    errors_before_expert = (1 - accuracy_before_expert) * len(labels_encoded)
 
-print(f'\nТочность на тестовых данных после внедрения эксперта: {accuracy_with_expert * 100:.2f}%\n')
+    errors_after_expert = errors_before_expert + num_corrections
+    correct_predictions_after_expert = len(labels_encoded) - errors_after_expert
+    accuracy_with_expert = correct_predictions_after_expert / len(labels_encoded)
+
+    print(f'\nТочность на тестовых данных после внедрения эксперта: {accuracy_with_expert * 100:.2f}%\n')
 
 
 # Вывод результатов в таблице
 print("="*121)
-results_df = pd.DataFrame({
+df_dict = {
     'Файл': short_file_paths,
-    'Метка': meta_le.inverse_transform(labels_encoded),
+    'Метка': [lab if lab is not None else '—' for lab in labels],
     'Chromatic': meta_le.inverse_transform(chromatic_preds_classes),
     'HOG': meta_le.inverse_transform(hog_preds_classes),
     'Depth Map': meta_le.inverse_transform(depth_map_preds_classes),
     'Итоговый вердикт': meta_le.inverse_transform(final_preds)
-})
+}
+
+results_df = pd.DataFrame(df_dict)
 
 print(results_df.to_string(index=False))
 
@@ -289,6 +316,7 @@ fresh_count = np.sum(final_preds == fresh_label)
 half_fresh_count = np.sum(final_preds == half_fresh_label)
 spoiled_count = np.sum(final_preds == spoiled_label)
 spoiled_meat_list = [file_paths[i] for i, pred in enumerate(final_preds) if pred == spoiled_label]
+
 
 # Переменные с данными для отчета
 supplier_number = 1 if not os.path.exists('./results/report.xlsx') else pd.read_excel('./results/report.xlsx').shape[0] + 1
