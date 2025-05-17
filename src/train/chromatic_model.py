@@ -108,7 +108,11 @@ history_fine = model.fit(
 
 # Сохранение модели после тонкой настройки
 model.save('../models/chromatic_model.h5')
-print("Fine-tuned chromatic analysis model saved.")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+with open('../models/chromatic_model.tflite', 'wb') as f:
+    f.write(tflite_model)
+print("Chromatic модель сохранена.")
 
 if os.path.exists('chromatic_analysis_model_initial.h5'):
     os.remove('chromatic_analysis_model_initial.h5')

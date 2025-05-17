@@ -11,6 +11,7 @@ from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l2
+from tensorflow import lite
 
 from src import config
 
@@ -103,6 +104,10 @@ print(classification_report(y_test, y_pred_classes, target_names=label_encoder.c
 
 # Сохранение модели
 model.save('../models/hog_model.h5')
+converter = lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+with open('../models/hog_model.tflite', 'wb') as f:
+    f.write(tflite_model)
 print("HOG Deep модель сохранена.")
 
 # Оценка модели на валидационных данных

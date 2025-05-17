@@ -108,7 +108,11 @@ history_fine = model.fit(
 
 # Сохранение модели после тонкой настройки
 model.save('../models/depth_model.h5')
-print("Fine-tuned depth map model saved.")
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+with open('../models/depth_model.tflite', 'wb') as f:
+    f.write(tflite_model)
+print("Depth map модель сохранена.")
 
 if os.path.exists('depth_map_model_initial.h5'):
     os.remove('depth_map_model_initial.h5')
