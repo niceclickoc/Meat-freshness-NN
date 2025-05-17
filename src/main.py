@@ -46,6 +46,14 @@ MAX_PASSES = 10  # Максимальное количество попыток
 
 WRITE_TO_REPORT = False
 
+
+# Функция на фикс кириллицы в путях к изображению
+def cv_imread_unicode(path: str):
+    data = np.fromfile(path, dtype=np.uint8)
+    img  = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    return img
+
+
 # Функции предобработки для каждой модели
 def preprocess_chromatic(image):
     return image / 255.0
@@ -68,7 +76,12 @@ def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model
     data = []
     labels = []
     file_paths = []
-    class_names = os.listdir(data_dir)
+
+    if data_dir and os.path.isdir(data_dir):
+        class_names = os.listdir(data_dir)
+    else:
+        class_names = []
+
     all_images = []
     random_samples = []
 
@@ -108,7 +121,7 @@ def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model
 
         while pass_count < MAX_PASSES and not agreed:
             try:
-                image = cv2.imread(img_path)
+                image = cv_imread_unicode(img_path)
                 if image is None:
                     raise ValueError("Не удалось загрузить изображение.")
 
