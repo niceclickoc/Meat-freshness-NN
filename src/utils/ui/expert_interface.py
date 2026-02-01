@@ -1,4 +1,6 @@
 import sys
+import cv2
+import numpy as np
 from PyQt5 import QtWidgets, QtGui, QtCore
 from PyQt5.QtWidgets import (
     QApplication,
@@ -10,7 +12,16 @@ from PyQt5.QtWidgets import (
     QMessageBox
 )
 
-def expert_interface(image_path, file_name, model_prediction, update_prediction_callback):
+def expert_interface(image_input, file_name, model_prediction, update_prediction_callback):
+    """
+    Expert review interface.
+    
+    Args:
+        image_input: Either a file path (str) or numpy array (H, W, 3)
+        file_name: Display name for the image
+        model_prediction: Model's prediction string
+        update_prediction_callback: Callback function with signature (new_pred_idx: int)
+    """
     class ExpertWindow(QDialog):
         def __init__(self):
             super().__init__()
@@ -29,14 +40,27 @@ def expert_interface(image_path, file_name, model_prediction, update_prediction_
             # Изображение
             img_label = QLabel()
             try:
-                pixmap = QtGui.QPixmap(image_path)
+                # Handle both file path and numpy array
+                if isinstance(image_input, str):
+                    # File path
+                    pixmap = QtGui.QPixmap(image_input)
+                elif isinstance(image_input, np.ndarray):
+                    # Numpy array (assume BGR format from OpenCV)
+                    image_rgb = cv2.cvtColor(image_input, cv2.COLOR_BGR2RGB)
+                    h, w, ch = image_rgb.shape
+                    bytes_per_line = ch * w
+                    qimage = QtGui.QImage(image_rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+                    pixmap = QtGui.QPixmap.fromImage(qimage)
+                else:
+                    raise ValueError("image_input must be str (path) or numpy array")
+                
                 if not pixmap.isNull():
                     pixmap = pixmap.scaled(300, 300, aspectRatioMode=QtCore.Qt.KeepAspectRatio)
                     img_label.setPixmap(pixmap)
                 else:
                     img_label.setText("Ошибка загрузки изображения")
-            except Exception:
-                 img_label.setText("Ошибка загрузки изображения")
+            except Exception as e:
+                 img_label.setText(f"Ошибка загрузки изображения: {e}")
             
             img_label.setAlignment(QtCore.Qt.AlignCenter)
             self.layout.addWidget(img_label)

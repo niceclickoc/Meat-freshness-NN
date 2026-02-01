@@ -45,6 +45,22 @@ class TestModeInterface(QWidget):
             print("[Test Mode] Initializing MiDaS for depth estimation...")
             initialize_midas(model_type="MiDaS_small")
         
+        # Initialize Object Detector
+        from src.utils.object_detector import initialize_detector, is_initialized as detector_initialized
+        if not detector_initialized():
+            print("[Test Mode] Initializing Object Detector...")
+            try:
+                initialize_detector()
+                self.detector_enabled = True
+            except Exception as e:
+                print(f"[Test Mode] Warning: Could not load detector: {e}")
+                print("[Test Mode] Running without detection (will process full frames)")
+                self.detector_enabled = False
+        else:
+            self.detector_enabled = True
+        
+        self.current_bboxes = []  # Store bboxes for visualization
+        
         self.init_ui()
         self.start_camera()
 
@@ -125,8 +141,22 @@ class TestModeInterface(QWidget):
         if self.camera and self.camera.isOpened():
             ret, frame = self.camera.read()
             if ret:
-                self.current_frame = frame
-                # Convert to RGB for Qt
+                self.current_frame = frame.copy()
+                
+                # Detect meat and draw bboxes (for visualization only)
+                if self.detector_enabled and not self.is_capturing_sequence:
+                    from src.utils.object_detector import detect_meat, draw_bboxes
+                    
+                    # Convert BGR to RGB for detection
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    bboxes = detect_meat(frame_rgb, conf_threshold=0.3)
+                    self.current_bboxes = bboxes
+                    
+                    # Draw bboxes on frame (BGR for OpenCV drawing)
+                    if bboxes:
+                        frame = draw_bboxes(frame.copy(), bboxes, color=(0, 255, 0), thickness=2)
+                
+                # Convert to RGB for Qt display
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = frame_rgb.shape
                 bytes_per_line = ch * w
@@ -185,6 +215,21 @@ class TestModeInterface(QWidget):
     def process_frame_logic(self, image):
         # 0. Convert BGR to RGB (Models were trained on RGB)
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+        # 0.5 Detect and crop to meat region
+        if self.detector_enabled:
+            from src.utils.object_detector import detect_meat, get_largest_bbox, crop_to_bbox
+            
+            bboxes = detect_meat(image_rgb, conf_threshold=0.5)
+            if bboxes:
+                largest_bbox = get_largest_bbox(bboxes)
+                self.log(f"Обнаружено мясо: bbox {largest_bbox[:4]}, confidence {largest_bbox[4]:.2f}")
+                
+                # Crop both RGB and BGR versions to bbox
+                image_rgb = crop_to_bbox(image_rgb, largest_bbox, padding=10)
+                image = crop_to_bbox(image, largest_bbox, padding=10)  # BGR version for HOG
+            else:
+                self.log("Предупреждение: Мясо не обнаружено, анализируется всё изображение")
 
         # 1. Preprocess & Predict
         target_size_chromatic = (256, 256)
@@ -250,20 +295,8 @@ class TestModeInterface(QWidget):
             # We need to translate final_pred_idx to string class name
             pred_class_name = self.meta_le.inverse_transform([final_pred_idx])[0]
             
-            # Save temporary image for expert
-            temp_path = "temp_expert.jpg"
-            cv2.imwrite(temp_path, image)
-            
             # Store state to resume
             self.waiting_for_expert = True
-            
-            # Blocking call to expert interface? 
-            # Expert interface in main.py is blocking (app.exec).
-            # But we are already in an app.exec.
-            # We should probably instantiate ExpertWindow and show it as Modal, 
-            # OR use the existing expert_interface function if it handles nested execution gracefully.
-            # expert_interface uses app.exec_(). Calling it again freezes the first one.
-            # So the outer loop pauses, which is what we want!
             
             # The callback updates our prediction.
             def update_callback(new_pred_idx):
@@ -271,7 +304,8 @@ class TestModeInterface(QWidget):
                 # We could store this correction if needed.
                 self.waiting_for_expert = False
             
-            expert_interface(temp_path, f"Frame {self.frames_captured}", pred_class_name, update_callback)
+            # Pass image directly (no temp file)
+            expert_interface(image, f"Frame {self.frames_captured}", pred_class_name, update_callback)
             
             # When expert_interface returns (it finishes its exec loop), we continue.
             self.log("Эксперт завершил работу. Продолжаем...")
