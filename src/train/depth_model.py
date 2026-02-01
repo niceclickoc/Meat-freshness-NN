@@ -1,5 +1,4 @@
 import os
-import zipfile
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,32 +12,30 @@ from tensorflow.keras.models import Model
 from src import config
 
 # Пути к данным
-dataset_path = config.DATASET_PATH
-extract_path = config.EXTRACT_PATH
-train_dir = os.path.join(extract_path, 'Meat Freshness.v1-new-dataset.multiclass', 'train')
-val_dir = os.path.join(extract_path, 'Meat Freshness.v1-new-dataset.multiclass', 'valid')
+# Определяем корневую директорию проекта относительно скрипта
+# src/train/depth_model.py -> project_root is ../../
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, '..', '..'))
 
-# Проверка наличия локального файла и распаковка архива
-if not os.path.exists(dataset_path):
-    print(f"Файл архива {dataset_path} не найден!")
-else:
-    if not os.path.exists(extract_path):
-        with zipfile.ZipFile(dataset_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
-        print("Архив успешно распакован.")
-    else:
-        print("Архив уже распакован.")
+# Новый датасет с картами глубины
+depth_dataset_root = os.path.join(project_root, 'meat_freshness_dataset_depth')
+dataset_inner_folder = 'Meat Freshness.v1-new-dataset.multiclass'
+
+train_dir = os.path.join(depth_dataset_root, dataset_inner_folder, 'train')
+val_dir = os.path.join(depth_dataset_root, dataset_inner_folder, 'valid')
+
+print(f"Используем датасет глубины: {depth_dataset_root}")
 
 # Проверка существования директорий train и valid
 if not os.path.exists(train_dir):
-    print(f"Директория {train_dir} не найдена.")
-else:
-    print(f"Директория {train_dir} существует.")
-
+    print(f"Ошибка: Директория {train_dir} не найдена. Сначала запустите src/train/utils/generate_depth_dataset.py")
+    exit(1)
+    
 if not os.path.exists(val_dir):
-    print(f"Директория {val_dir} не найдена.")
-else:
-    print(f"Директория {val_dir} существует.")
+    print(f"Ошибка: Директория {val_dir} не найдена.")
+    exit(1)
+
+print(f"Директории обучения найдены:\nTrain: {train_dir}\nValid: {val_dir}")
 
 # Создание генераторов данных
 train_datagen = ImageDataGenerator(rescale=1./255, horizontal_flip=True, rotation_range=30, zoom_range=0.2)
@@ -107,10 +104,17 @@ history_fine = model.fit(
 )
 
 # Сохранение модели после тонкой настройки
-model.save('../models/depth_model.h5')
+models_dir = os.path.join(script_dir, '..', 'models')
+if not os.path.exists(models_dir):
+    os.makedirs(models_dir)
+    
+model_save_path = os.path.join(models_dir, 'depth_model_v2.h5')
+tflite_save_path = os.path.join(models_dir, 'depth_model_v2.tflite')
+
+model.save(model_save_path)
 converter = tf.lite.TFLiteConverter.from_keras_model(model)
 tflite_model = converter.convert()
-with open('../models/depth_model.tflite', 'wb') as f:
+with open(tflite_save_path, 'wb') as f:
     f.write(tflite_model)
 print("Depth map модель сохранена.")
 

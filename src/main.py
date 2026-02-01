@@ -7,12 +7,13 @@ import random
 
 from tensorflow.keras.models import load_model
 from sklearn.metrics import accuracy_score, classification_report
-from skimage.feature import hog
+from sklearn.metrics import accuracy_score, classification_report
 
 from src.utils.consensus_committee import ConsensusCommittee
-from src.utils.expert_interface import expert_interface
-from src.utils.user_interface import main as ui_main
+from src.utils.ui.expert_interface import expert_interface
+from src.utils.ui.user_interface import main as ui_main
 from src.utils.report import generate_report
+from src.utils.image_processing import preprocess_chromatic, preprocess_hog, preprocess_depth_map
 
 
 # Пути к моделям
@@ -21,7 +22,7 @@ def rsrc(*parts):
     return os.path.join(base, *parts)
 chromatic_model_path = rsrc('models', 'chromatic_model.h5')
 hog_model_path = rsrc('models', 'hog_model.h5')
-depth_map_model_path = rsrc('models', 'depth_model.h5')
+depth_map_model_path = rsrc('models', 'depth_model_v2.h5')
 meta_clf_path = rsrc('models', 'meta', 'meta_clf.joblib')
 meta_le_path = rsrc('models', 'meta', 'meta_label_encoder.joblib')
 
@@ -32,12 +33,36 @@ depth_map_model = load_model(depth_map_model_path)
 meta_clf = joblib.load(meta_clf_path)
 meta_le = joblib.load(meta_le_path)
 
+# Инициализация MiDaS для depth model
+from src.utils.depth_estimator import initialize_midas
+print("Инициализация MiDaS для depth estimation...")
+initialize_midas(model_type="MiDaS_small")
+print("MiDaS готов к работе.")
+
 # Пути к тестовым данным
 test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
 
 # UI
 test_image_path, selected_class, ui_action = ui_main()
 user_has_label = False
+
+if ui_action == 'test_mode':
+    from PyQt5.QtWidgets import QApplication
+    from src.utils.ui.test_mode_interface import TestModeInterface
+    import sys
+
+    # Get existing app or create new (it should exist from ui_main)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+
+    test_window = TestModeInterface(
+        chromatic_model, hog_model, depth_map_model, meta_clf, meta_le
+    )
+    test_window.show()
+    app.exec_()
+    sys.exit(0) # Exit after test mode
+
 if ui_action == 'abort':
     sys.exit(0)
 
@@ -51,24 +76,9 @@ WRITE_TO_REPORT = False
 def cv_imread_unicode(path: str):
     data = np.fromfile(path, dtype=np.uint8)
     img  = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if img is not None:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
-
-
-# Функции предобработки для каждой модели
-def preprocess_chromatic(image):
-    return image / 255.0
-
-def preprocess_hog(image):
-    if image.dtype != np.uint8:
-        image = image.astype(np.uint8)
-
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    resized_img = cv2.resize(image, (128, 128))
-    features = hog(resized_img, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=False)
-    return features
-
-def preprocess_depth_map(image):
-    return image / 255.0
 
 
 # Функция для загрузки данных и получения предсказаний от модели с множественными проходами

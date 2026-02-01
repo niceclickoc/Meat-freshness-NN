@@ -93,7 +93,17 @@ class ConsensusCommittee:
         """
         # Step 1: Calculate the weighted average
         weighted_avg = self.weighted_average(chromatic_prob, hog_prob, depth_prob)
-        result = self.sigmoid(weighted_avg)
+        
+        # SAFETY OVERRIDE: If any single model is very confident (>0.8), we trust the alarm.
+        # This prevents "dilution" where one model screams "Spoiled" (0.9) and others say "Fine" (0.1),
+        # resulting in an average (0.36) that ignores the danger.
+        max_prob = max(chromatic_prob, hog_prob, depth_prob)
+        
+        if max_prob > 0.8:
+            result = float(max_prob)
+            print(f"Safety Override Triggered! Max prob {max_prob} used instead of avg {weighted_avg}")
+        else:
+            result = float(np.clip(weighted_avg, 0, 1))
 
         # Step 2: Check automatic defect confirmation
         if result >= self.threshold_auto_confirm:
@@ -120,6 +130,7 @@ class ConsensusCommittee:
 
             try:
                 final_result = result * (1 / supplier_coef(fresh, half_fresh, spoiled))
+                final_result = float(np.clip(final_result, 0, 1))
             except ZeroDivisionError:
                 final_result = result
 

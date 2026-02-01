@@ -12,29 +12,24 @@ from sklearn.metrics import accuracy_score, classification_report
 # Пути к предобученным моделям
 chromatic_model_path = '../models/chromatic_model.h5'
 hog_model_path = '../models/hog_model.h5'
-depth_map_model_path = '../models/depth_model.h5'
+depth_map_model_path = '../models/depth_model_v2.h5'  # Используем новую модель, обученную на depth maps
 
 # Загрузка моделей
 chromatic_model = load_model(chromatic_model_path)
 hog_model = load_model(hog_model_path)
 depth_map_model = load_model(depth_map_model_path)
 
+# Инициализация MiDaS для depth preprocessing
+from src.utils.depth_estimator import initialize_midas
+print("Инициализация MiDaS для генерации depth maps...")
+initialize_midas(model_type="MiDaS_small")
+print("MiDaS готов к работе.")
+
 # Путь к обучающему набору данных
 train_dir = '../../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/train'
 
-def preprocess_chromatic(image):
-    return image / 255.0
-
-def preprocess_hog(image):
-    if image.dtype != np.uint8:
-        image = image.astype(np.uint8)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    resized_img = cv2.resize(image, (128, 128))
-    features = hog(resized_img, pixels_per_cell=(16, 16), cells_per_block=(2, 2), visualize=False)
-    return features
-
-def preprocess_depth_map(image):
-    return image / 255.0
+# Используем те же функции preprocessing, что и в инференсе
+from src.utils.image_processing import preprocess_chromatic, preprocess_hog, preprocess_depth_map
 
 def load_data_for_meta(train_dir, target_size_chromatic=(256,256), target_size_hog=(128,128), target_size_depth=(256,256)):
     class_names = os.listdir(train_dir)
@@ -52,6 +47,9 @@ def load_data_for_meta(train_dir, target_size_chromatic=(256,256), target_size_h
             image = cv2.imread(img_path)
             if image is None:
                 continue
+            
+            # Конвертируем BGR в RGB (как в inference)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
             # Предобработка
             chromatic_image = cv2.resize(image, target_size_chromatic)
