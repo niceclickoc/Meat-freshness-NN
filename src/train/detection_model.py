@@ -30,8 +30,10 @@ def train_detection_model():
     results = model.train(
         data=str(dataset_yaml),
         epochs=50,
-        imgsz=416,  # Match dataset size
+        imgsz=416,
+        workers=2,
         batch=16,
+        device=0,
         patience=10,  # Early stopping
         save=True,
         project=str(project_root / "runs" / "detect"),
