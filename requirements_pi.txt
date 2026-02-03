@@ -1,0 +1,25 @@
+# Core ML
+tensorflow==2.15.0
+torch
+torchvision
+ultralytics
+
+# Data Processing
+numpy
+pandas
+scikit-learn
+joblib
+matplotlib
+scikit-image
+openpyxl
+
+# GUI & Imaging
+# We use headless OpenCV because we display via PyQt5
+opencv-python-headless
+PyQt5
+Pillow
+
+# Utils
+tqdm
+requests
+PyYAML

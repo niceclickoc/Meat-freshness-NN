@@ -5,7 +5,7 @@ import time
 from PyQt5 import QtGui, QtCore, QtWidgets
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, 
-    QComboBox, QMessageBox, QGroupBox, QRadioButton, QButtonGroup
+    QComboBox, QMessageBox, QGroupBox, QRadioButton, QButtonGroup, QCheckBox
 )
 
 from src.utils.consensus_committee import ConsensusCommittee
@@ -109,6 +109,14 @@ class TestModeInterface(QWidget):
         
         controls_layout.addSpacing(20)
         
+        # Detection Toggle
+        self.detection_checkbox = QCheckBox("Использовать детекцию")
+        self.detection_checkbox.setChecked(self.detector_enabled)
+        self.detection_checkbox.toggled.connect(self.toggle_detection)
+        controls_layout.addWidget(self.detection_checkbox)
+        
+        controls_layout.addSpacing(20)
+        
         # Start Button
         self.start_button = QPushButton("СТАРТ")
         self.start_button.setMinimumHeight(50)
@@ -137,6 +145,19 @@ class TestModeInterface(QWidget):
             self.camera.release()
         self.timer.stop()
 
+    def toggle_detection(self, checked):
+        self.detector_enabled = checked
+        if checked:
+            # Re-initialize if needed (though we keep it loaded in memory usually)
+            from src.utils.object_detector import is_initialized, initialize_detector
+            if not is_initialized():
+                 try:
+                     initialize_detector()
+                 except Exception as e:
+                     self.detection_checkbox.setChecked(False) # Revert
+                     QMessageBox.warning(self, "Ошибка", f"Не удалось загрузить детектор: {e}")
+        self.current_bboxes = [] # Clear visualization if disabled
+
     def update_frame(self):
         if self.camera and self.camera.isOpened():
             ret, frame = self.camera.read()
@@ -155,6 +176,8 @@ class TestModeInterface(QWidget):
                     # Draw bboxes on frame (BGR for OpenCV drawing)
                     if bboxes:
                         frame = draw_bboxes(frame.copy(), bboxes, color=(0, 255, 0), thickness=2)
+                else:
+                    self.current_bboxes = [] # Clear if disabled
                 
                 # Convert to RGB for Qt display
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -229,9 +252,11 @@ class TestModeInterface(QWidget):
             
             # Trigger Rotation Pause
             if self.frames_captured < self.frames_to_capture:
-                self.log("⏳ Поверните мясо... (пауза 2 сек)")
-                self.waiting_for_rotation = True
-                QtCore.QTimer.singleShot(2000, self.resume_after_rotation)
+                self.log("⏳ Следующий кадр...")
+                # No long pause requested by user. Short pause to allow UI update?
+                # Using 500ms so it's not INSTANT machine gun fire, giving slightly chance to rotate if needed
+                # But user said "remove 2 sec pause".
+                QtCore.QTimer.singleShot(200, self.control_loop)
             else:
                 # Last frame, finish immediately
                 self.control_loop()
