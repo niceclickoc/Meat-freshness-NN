@@ -39,6 +39,18 @@ print("Инициализация MiDaS для depth estimation...")
 initialize_midas(model_type="MiDaS_small")
 print("MiDaS готов к работе.")
 
+# Инициализация Object Detector
+from src.utils.object_detector import initialize_detector, is_initialized as detector_initialized
+print("Инициализация Object Detector...")
+try:
+    initialize_detector()
+    detector_enabled = True
+    print("Object Detector готов к работе.")
+except Exception as e:
+    print(f"Ошибка инициализации детектора: {e}")
+    # Не падаем, просто будем работать без детекции
+    detector_enabled = False
+
 # Пути к тестовым данным
 test_dir = '../meat_freshness_dataset/Meat Freshness.v1-new-dataset.multiclass/valid'
 
@@ -135,15 +147,32 @@ def load_and_predict_multiple_passes(chromatic_model, hog_model, depth_map_model
                 if image is None:
                     raise ValueError("Не удалось загрузить изображение.")
 
-                # Предобработка для каждой модели
-                chromatic_image = cv2.resize(image, target_size_chromatic)
+                image_rgb = image # cv_imread_unicode returns RGB
+                image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) # Convert to BGR for HOG if needed
+
+                # 0.5 Detect and crop (если детектор работает)
+                if detector_enabled:
+                    from src.utils.object_detector import detect_meat, get_largest_bbox, crop_to_bbox
+                    
+                    # Детекция на RGB изображении
+                    bboxes = detect_meat(image_rgb, conf_threshold=0.5)
+                    if bboxes:
+                        largest_bbox = get_largest_bbox(bboxes)
+                        # Crop logic
+                        image_rgb = crop_to_bbox(image_rgb, largest_bbox, padding=10)
+                        image_bgr = crop_to_bbox(image_bgr, largest_bbox, padding=10) # BGR for HOG
+                    else:
+                        print(f"Предупреждение: Мясо не обнаружено на {img_path}, анализируется всё изображение")
+
+                # Preprocessing
+                chromatic_image = cv2.resize(image_rgb, target_size_chromatic)
                 chromatic_image = preprocess_chromatic(chromatic_image)
 
-                hog_image = preprocess_hog(image)
+                hog_image = preprocess_hog(image_bgr) # Use BGR for HOG
                 # HOG возвращает одномерный массив, добавляем размерность для модели
                 hog_image = np.expand_dims(hog_image, axis=0)
 
-                depth_image = cv2.resize(image, target_size_depth)
+                depth_image = cv2.resize(image_rgb, target_size_depth)
                 depth_image = preprocess_depth_map(depth_image)
 
                 # Получение предсказаний от моделей
